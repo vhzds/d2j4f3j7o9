@@ -18,7 +18,6 @@ st.set_page_config(
 # --- 2. CUSTOM CSS ---
 st.markdown("""
 <style>
-    /* Menyembunyikan menu bawaan bagian kanan dan footer */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
 
@@ -135,7 +134,6 @@ if check_password():
                 hari = int(pencarian.group(1))
                 bulan_teks = pencarian.group(2)
                 tahun = int(pencarian.group(3))
-                
                 if bulan_teks in daftar_bulan:
                     try:
                         return datetime.date(tahun, daftar_bulan[bulan_teks], hari)
@@ -160,12 +158,13 @@ if check_password():
         st.error(f"Gagal mengambil data. Detail: {e}")
         st.stop()
 
-    # --- SIDEBAR: FILTER DINAMIS (CASCADING 5 TINGKAT) ---
+
+    # --- SIDEBAR: CROSS-FILTERING MULTI-ARAH (100% DINAMIS) ---
     with st.sidebar:
         st.markdown("### 🎛️ Panel Filter")
-        st.info("Pilihan akan menyusut otomatis menyesuaikan data yang tersedia.")
+        st.info("Setiap opsi akan otomatis menyusut mengikuti pilihan Anda di filter mana pun.")
         
-        # 1. FILTER RENTANG WAKTU
+        # 1. FILTER RENTANG WAKTU (Sebagai Batas Utama)
         st.markdown("#### 📅 Waktu Kejadian")
         tanggal_valid = df['Tanggal_Sistem'].dropna()
         if not tanggal_valid.empty:
@@ -179,9 +178,11 @@ if check_password():
             "Pilih Rentang Tanggal:",
             value=(min_date, max_date),
             min_value=min_date,
-            max_value=max_date
+            max_value=max_date,
+            key="sel_waktu"
         )
         
+        # Eksekusi Logika Waktu
         if len(rentang_tanggal) == 2:
             start_date, end_date = rentang_tanggal
             if start_date == min_date and end_date == max_date:
@@ -192,40 +193,63 @@ if check_password():
             mask_waktu = df['Tanggal_Sistem'] == rentang_tanggal[0]
         else:
             mask_waktu = pd.Series(True, index=df.index)
-            
-        df_waktu = df[mask_waktu] 
-        
+
         st.markdown("---")
+
+        # --- Inisialisasi Memori Filter ---
+        for key in ['sel_tahapan', 'sel_pelaksana', 'sel_sasaran', 'sel_bentuk']:
+            if key not in st.session_state:
+                st.session_state[key] = []
+
+        cur_tahapan = st.session_state['sel_tahapan']
+        cur_pelaksana = st.session_state['sel_pelaksana']
+        cur_sasaran = st.session_state['sel_sasaran']
+        cur_bentuk = st.session_state['sel_bentuk']
+
+        # --- Fungsi Pembuat Syarat Filter (Mask) ---
+        def make_mask(col, values):
+            if not values or col not in df.columns:
+                return pd.Series(True, index=df.index)
+            return df[col].isin(values)
+
+        mask_tahapan = make_mask('Tahapan yang diawasi', cur_tahapan)
+        mask_pelaksana = make_mask('Pelaksana_Sistem', cur_pelaksana)
+        mask_sasaran = make_mask('Sasaran', cur_sasaran)
+        mask_bentuk = make_mask('Bentuk', cur_bentuk)
+
+        # --- Fungsi Pembuat Daftar Opsi (Mencegah Error Pilihan Hilang) ---
+        def get_options(mask, col, current_selections):
+            if col not in df.columns:
+                return []
+            valid_df = df[mask]
+            # Ambil nilai unik yang tidak kosong atau sekadar strip '-'
+            opts = set([str(x).strip() for x in valid_df[col].dropna() if str(x).strip() not in ['', '-']])
+            # Pastikan nilai yang sedang dipilih tetap ada di daftar agar tidak error
+            for sel in current_selections:
+                if str(sel).strip() != '':
+                    opts.add(str(sel).strip())
+            return sorted(list(opts))
+
+        # --- RENDER WIDGET (Opsi ditentukan oleh semua filter lain KECUALI dirinya sendiri) ---
         
-        # 2. FILTER TAHAPAN 
-        tahapan_list = sorted([str(x) for x in df_waktu['Tahapan yang diawasi'].dropna().unique() if x])
-        selected_tahapan = st.multiselect("Tahapan Pengawasan", tahapan_list, placeholder="Pilih Tahapan...")
+        # Tahapan disaring oleh Waktu + Pelaksana + Sasaran + Bentuk
+        tahapan_opts = get_options(mask_waktu & mask_pelaksana & mask_sasaran & mask_bentuk, 'Tahapan yang diawasi', cur_tahapan)
+        st.multiselect("Tahapan Pengawasan", tahapan_opts, key='sel_tahapan', placeholder="Semua Tahapan...")
 
-        df_tahapan = df_waktu if not selected_tahapan else df_waktu[df_waktu['Tahapan yang diawasi'].isin(selected_tahapan)]
+        # Pelaksana disaring oleh Waktu + Tahapan + Sasaran + Bentuk
+        pelaksana_opts = get_options(mask_waktu & mask_tahapan & mask_sasaran & mask_bentuk, 'Pelaksana_Sistem', cur_pelaksana)
+        st.multiselect("Pelaksana Tugas Utama", pelaksana_opts, key='sel_pelaksana', placeholder="Semua Pelaksana...")
 
-        # 3. FILTER PELAKSANA 
-        pelaksana_list = sorted([str(x) for x in df_tahapan['Pelaksana_Sistem'].dropna().unique() if x])
-        selected_pelaksana = st.multiselect("Pelaksana Tugas Utama", pelaksana_list, placeholder="Pilih Pelaksana...")
+        # Sasaran disaring oleh Waktu + Tahapan + Pelaksana + Bentuk
+        sasaran_opts = get_options(mask_waktu & mask_tahapan & mask_pelaksana & mask_bentuk, 'Sasaran', cur_sasaran)
+        st.multiselect("Sasaran Pengawasan", sasaran_opts, key='sel_sasaran', placeholder="Semua Sasaran...")
 
-        df_pelaksana = df_tahapan if not selected_pelaksana else df_tahapan[df_tahapan['Pelaksana_Sistem'].isin(selected_pelaksana)]
-        
-        # 4. FILTER SASARAN (BARU)
-        if 'Sasaran' in df_pelaksana.columns:
-            sasaran_list = sorted([str(x) for x in df_pelaksana['Sasaran'].dropna().unique() if x and x.strip() != ''])
-        else:
-            sasaran_list = []
-        selected_sasaran = st.multiselect("Sasaran Pengawasan", sasaran_list, placeholder="Pilih Sasaran...")
+        # Bentuk disaring oleh Waktu + Tahapan + Pelaksana + Sasaran
+        bentuk_opts = get_options(mask_waktu & mask_tahapan & mask_pelaksana & mask_sasaran, 'Bentuk', cur_bentuk)
+        st.multiselect("Bentuk Pengawasan", bentuk_opts, key='sel_bentuk', placeholder="Semua Bentuk...")
 
-        df_sasaran = df_pelaksana if not selected_sasaran else df_pelaksana[df_pelaksana['Sasaran'].isin(selected_sasaran)]
-        
-        # 5. FILTER BENTUK (BARU)
-        if 'Bentuk' in df_sasaran.columns:
-            bentuk_list = sorted([str(x) for x in df_sasaran['Bentuk'].dropna().unique() if x and x.strip() != ''])
-        else:
-            bentuk_list = []
-        selected_bentuk = st.multiselect("Bentuk Pengawasan", bentuk_list, placeholder="Pilih Bentuk...")
-
-        df_filtered = df_sasaran if not selected_bentuk else df_sasaran[df_sasaran['Bentuk'].isin(selected_bentuk)]
+        # --- GABUNGKAN SEMUA FILTER UNTUK DATAFRAME FINAL ---
+        df_filtered = df[mask_waktu & mask_tahapan & mask_pelaksana & mask_sasaran & mask_bentuk]
 
 
     # --- PEMBERSIHAN DATA UNTUK DITAMPILKAN ---
@@ -246,9 +270,7 @@ if check_password():
     with tab1:
         st.markdown("#### Ringkasan Grafik Pengawasan")
         
-        # --- BARIS PERTAMA GRAFIK ---
         c1, c2 = st.columns(2)
-        
         with c1:
             if not df_filtered.empty and 'Tahapan yang diawasi' in df_filtered.columns:
                 tahapan_count = df_filtered['Tahapan yang diawasi'].value_counts().reset_index()
@@ -277,12 +299,10 @@ if check_password():
                 
         st.markdown("<br>", unsafe_allow_html=True) 
 
-        # --- BARIS KEDUA GRAFIK ---
         c3, c4 = st.columns(2)
-        
         with c3:
             if not df_filtered.empty and 'Sasaran' in df_filtered.columns:
-                df_sasaran_chart = df_filtered[df_filtered['Sasaran'].notna() & (df_filtered['Sasaran'] != '')]
+                df_sasaran_chart = df_filtered[df_filtered['Sasaran'].notna() & (df_filtered['Sasaran'].str.strip() != '') & (df_filtered['Sasaran'].str.strip() != '-')]
                 if not df_sasaran_chart.empty:
                     sasaran_count = df_sasaran_chart['Sasaran'].value_counts().reset_index()
                     sasaran_count.columns = ['Sasaran', 'Jumlah']
@@ -293,13 +313,13 @@ if check_password():
                     fig3.update_layout(showlegend=False, margin=dict(l=0, r=0, t=40, b=0))
                     st.plotly_chart(fig3, use_container_width=True)
                 else:
-                    st.info("Seluruh kolom Sasaran kosong pada data yang Anda filter.")
+                    st.info("Seluruh kolom Sasaran kosong pada data yang difilter.")
             else:
                 st.info("Tidak ada data Sasaran yang sesuai.")
 
         with c4:
             if not df_filtered.empty and 'Bentuk' in df_filtered.columns:
-                df_bentuk_chart = df_filtered[df_filtered['Bentuk'].notna() & (df_filtered['Bentuk'] != '')]
+                df_bentuk_chart = df_filtered[df_filtered['Bentuk'].notna() & (df_filtered['Bentuk'].str.strip() != '') & (df_filtered['Bentuk'].str.strip() != '-')]
                 if not df_bentuk_chart.empty:
                     bentuk_count = df_bentuk_chart['Bentuk'].value_counts().reset_index()
                     bentuk_count.columns = ['Bentuk', 'Jumlah']
@@ -310,7 +330,7 @@ if check_password():
                     fig4.update_layout(showlegend=False, margin=dict(l=0, r=0, t=40, b=0))
                     st.plotly_chart(fig4, use_container_width=True)
                 else:
-                    st.info("Seluruh kolom Bentuk kosong pada data yang Anda filter.")
+                    st.info("Seluruh kolom Bentuk kosong pada data yang difilter.")
             else:
                 st.info("Tidak ada data Bentuk yang sesuai.")
 
