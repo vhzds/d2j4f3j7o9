@@ -120,7 +120,6 @@ if check_password():
         df = pd.DataFrame(raw_data[1:], columns=raw_data[0]) 
         df = df.replace("", None)
         
-        # Ekstraksi Tanggal
         def ekstrak_tanggal_indo(teks):
             if not isinstance(teks, str):
                 return pd.NaT
@@ -144,7 +143,6 @@ if check_password():
                         return pd.NaT
             return pd.NaT
         
-        # Ekstraksi Nama Pertama
         def ekstrak_pelaksana_utama(teks):
             if isinstance(teks, str) and teks.strip():
                 return teks.split(',')[0].strip()
@@ -162,12 +160,12 @@ if check_password():
         st.error(f"Gagal mengambil data. Detail: {e}")
         st.stop()
 
-    # --- SIDEBAR: FILTER CANGGIH ---
+    # --- SIDEBAR: FILTER DINAMIS (CASCADING) ---
     with st.sidebar:
         st.markdown("### 🎛️ Panel Filter")
-        st.info("Biarkan kosong untuk menampilkan semua data.")
+        st.info("Opsi di bawah ini akan menyesuaikan secara otomatis.")
         
-        # 1. Filter Rentang Waktu
+        # 1. FILTER RENTANG WAKTU (Paling Atas)
         st.markdown("#### 📅 Waktu Kejadian")
         tanggal_valid = df['Tanggal_Sistem'].dropna()
         if not tanggal_valid.empty:
@@ -184,46 +182,45 @@ if check_password():
             max_value=max_date
         )
         
+        # Proses Filter Waktu
+        if len(rentang_tanggal) == 2:
+            start_date, end_date = rentang_tanggal
+            if start_date == min_date and end_date == max_date:
+                mask_waktu = pd.Series(True, index=df.index)
+            else:
+                mask_waktu = df['Tanggal_Sistem'].between(start_date, end_date)
+        elif len(rentang_tanggal) == 1:
+            mask_waktu = df['Tanggal_Sistem'] == rentang_tanggal[0]
+        else:
+            mask_waktu = pd.Series(True, index=df.index)
+            
+        df_waktu = df[mask_waktu] # Dataframe hasil saringan waktu
+        
         st.markdown("---")
         
-        # 2. Filter Tahapan (Default dikosongkan)
-        tahapan_list = [x for x in df['Tahapan yang diawasi'].dropna().unique() if x]
+        # 2. FILTER TAHAPAN (Menyesuaikan dengan Waktu)
+        tahapan_list = sorted([str(x) for x in df_waktu['Tahapan yang diawasi'].dropna().unique() if x])
         selected_tahapan = st.multiselect("Tahapan Pengawasan", tahapan_list, placeholder="Pilih Tahapan...")
 
-        # 3. Filter Pelaksana (Default dikosongkan)
-        pelaksana_list = [x for x in df['Pelaksana_Sistem'].dropna().unique() if x]
+        # Proses Filter Tahapan
+        if not selected_tahapan:
+            df_tahapan = df_waktu
+        else:
+            df_tahapan = df_waktu[df_waktu['Tahapan yang diawasi'].isin(selected_tahapan)]
+
+        # 3. FILTER PELAKSANA (Menyesuaikan dengan Waktu DAN Tahapan)
+        # Daftar nama pelaksana sekarang diambil dari df_tahapan, BUKAN dari df keseluruhan
+        pelaksana_list = sorted([str(x) for x in df_tahapan['Pelaksana_Sistem'].dropna().unique() if x])
         selected_pelaksana = st.multiselect("Pelaksana Tugas Utama", pelaksana_list, placeholder="Pilih Pelaksana...")
 
-    # --- PENERAPAN LOGIKA FILTER (SUDAH DIPERBAIKI) ---
-    
-    # Logika Tahapan: Jika list kosong, anggap semua benar (True). Jika ada isi, saring data.
-    if not selected_tahapan:
-        mask_tahapan = pd.Series(True, index=df.index)
-    else:
-        mask_tahapan = df['Tahapan yang diawasi'].isin(selected_tahapan)
-
-    # Logika Pelaksana: Jika list kosong, anggap semua benar (True). Jika ada isi, saring data.
-    if not selected_pelaksana:
-        mask_pelaksana = pd.Series(True, index=df.index)
-    else:
-        mask_pelaksana = df['Pelaksana_Sistem'].isin(selected_pelaksana)
-    
-    # Logika Waktu: Agar data yang tanggalnya keliru/kosong tetap tampil jika filter tanggal tidak diubah
-    if len(rentang_tanggal) == 2:
-        start_date, end_date = rentang_tanggal
-        # Jika rentang masih bawaan (min sampai max), tampilkan SEMUA data termasuk yang tanggalnya kosong (NaT)
-        if start_date == min_date and end_date == max_date:
-            mask_waktu = pd.Series(True, index=df.index)
+        # Proses Filter Akhir
+        if not selected_pelaksana:
+            df_filtered = df_tahapan
         else:
-            mask_waktu = df['Tanggal_Sistem'].between(start_date, end_date)
-    elif len(rentang_tanggal) == 1:
-        mask_waktu = df['Tanggal_Sistem'] == rentang_tanggal[0]
-    else:
-        mask_waktu = pd.Series(True, index=df.index)
+            df_filtered = df_tahapan[df_tahapan['Pelaksana_Sistem'].isin(selected_pelaksana)]
 
-    # Gabungkan semua filter
-    df_filtered = df[mask_tahapan & mask_pelaksana & mask_waktu]
-    
+
+    # --- PEMBERSIHAN DATA UNTUK DITAMPILKAN ---
     df_tampil = df_filtered.drop(columns=['Tanggal_Sistem', 'Pelaksana_Sistem'], errors='ignore')
 
     # --- METRIK INDIKATOR UTAMA ---
