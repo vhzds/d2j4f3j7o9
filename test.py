@@ -100,7 +100,7 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-    # Fungsi Ambil Data & Ekstrak Tanggal
+    # Fungsi Ambil Data & Ekstrak Data
     @st.cache_data(ttl=60)
     def load_data():
         creds_secret = st.secrets["google_credentials"]
@@ -120,7 +120,7 @@ if check_password():
         df = pd.DataFrame(raw_data[1:], columns=raw_data[0]) 
         df = df.replace("", None)
         
-        # LOGIKA EKSTRAKSI TANGGAL (Mengambil hanya Tanggal, Bulan, Tahun)
+        # 1. LOGIKA EKSTRAKSI TANGGAL
         def ekstrak_tanggal_indo(teks):
             if not isinstance(teks, str):
                 return pd.NaT
@@ -131,7 +131,6 @@ if check_password():
                 'september': 9, 'oktober': 10, 'november': 11, 'desember': 12
             }
             
-            # Mencari pola: Angka (1-2 digit) + Teks Bulan + Angka Tahun (4 digit)
             pencarian = re.search(r'(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})', teks.lower())
             if pencarian:
                 hari = int(pencarian.group(1))
@@ -145,8 +144,16 @@ if check_password():
                         return pd.NaT
             return pd.NaT
         
-        # Terapkan ekstraksi ke kolom baru khusus untuk sistem filter
+        # 2. LOGIKA EKSTRAKSI NAMA PELAKSANA PERTAMA
+        def ekstrak_pelaksana_utama(teks):
+            if isinstance(teks, str) and teks.strip():
+                # Memotong string berdasarkan koma dan mengambil indeks ke-0 (sebelum koma pertama)
+                return teks.split(',')[0].strip()
+            return teks
+
+        # Terapkan ekstraksi ke kolom-kolom sistem
         df['Tanggal_Sistem'] = df['Waktu dan Tempat'].apply(ekstrak_tanggal_indo)
+        df['Pelaksana_Sistem'] = df['Nama Pelaksana Tugas'].apply(ekstrak_pelaksana_utama)
         
         return df
 
@@ -162,7 +169,7 @@ if check_password():
         st.markdown("### 🎛️ Panel Filter")
         st.markdown("Gunakan panel ini untuk menyaring data yang ditampilkan.")
         
-        # 1. Filter Rentang Waktu (Kalender)
+        # 1. Filter Rentang Waktu
         st.markdown("#### 📅 Waktu Kejadian")
         tanggal_valid = df['Tanggal_Sistem'].dropna()
         if not tanggal_valid.empty:
@@ -185,15 +192,15 @@ if check_password():
         tahapan_list = [x for x in df['Tahapan yang diawasi'].dropna().unique() if x]
         selected_tahapan = st.multiselect("Tahapan Pengawasan", tahapan_list, default=tahapan_list)
 
-        # 3. Filter Pelaksana
-        pelaksana_list = [x for x in df['Nama Pelaksana Tugas'].dropna().unique() if x]
-        selected_pelaksana = st.multiselect("Pelaksana Tugas", pelaksana_list, default=pelaksana_list)
+        # 3. Filter Pelaksana (Menggunakan Pelaksana_Sistem)
+        pelaksana_list = [x for x in df['Pelaksana_Sistem'].dropna().unique() if x]
+        selected_pelaksana = st.multiselect("Pelaksana Tugas Utama", pelaksana_list, default=pelaksana_list)
 
     # --- PENERAPAN LOGIKA FILTER ---
     mask_tahapan = df['Tahapan yang diawasi'].isin(selected_tahapan)
-    mask_pelaksana = df['Nama Pelaksana Tugas'].isin(selected_pelaksana)
+    # Masking pelaksana sekarang merujuk pada nama sebelum koma
+    mask_pelaksana = df['Pelaksana_Sistem'].isin(selected_pelaksana)
     
-    # Logika khusus untuk kalender yang mengembalikan 1 atau 2 nilai tanggal
     if len(rentang_tanggal) == 2:
         start_date, end_date = rentang_tanggal
         mask_waktu = df['Tanggal_Sistem'].between(start_date, end_date)
@@ -205,14 +212,15 @@ if check_password():
     # Gabungkan semua filter
     df_filtered = df[mask_tahapan & mask_pelaksana & mask_waktu]
     
-    # Sembunyikan kolom 'Tanggal_Sistem' dari tabel akhir agar tidak membingungkan user
-    df_tampil = df_filtered.drop(columns=['Tanggal_Sistem'], errors='ignore')
+    # Sembunyikan kolom 'Tanggal_Sistem' dan 'Pelaksana_Sistem' dari tabel akhir
+    df_tampil = df_filtered.drop(columns=['Tanggal_Sistem', 'Pelaksana_Sistem'], errors='ignore')
 
     # --- METRIK INDIKATOR UTAMA ---
     st.markdown("<br>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
     m1.metric("📂 Total Laporan Terinput", f"{len(df_filtered)} Laporan")
-    m2.metric("👥 Pelaksana Tugas Aktif", f"{df_filtered['Nama Pelaksana Tugas'].nunique()} Orang")
+    # Menghitung pelaksana berdasarkan nama utama (sebelum koma)
+    m2.metric("👥 Pelaksana Tugas Aktif", f"{df_filtered['Pelaksana_Sistem'].nunique()} Orang")
     m3.metric("📊 Tahapan Diawasi", f"{df_filtered['Tahapan yang diawasi'].nunique()} Kategori")
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -239,10 +247,11 @@ if check_password():
 
         with c2:
             if not df_filtered.empty:
-                pelaksana_count = df_filtered['Nama Pelaksana Tugas'].value_counts().reset_index()
-                pelaksana_count.columns = ['Nama Pelaksana', 'Jumlah']
-                fig2 = px.pie(pelaksana_count, names='Nama Pelaksana', values='Jumlah', hole=0.4,
-                              title="Kontribusi Pelaksana Tugas",
+                # Membangun Pie Chart berdasarkan nama pertama saja
+                pelaksana_count = df_filtered['Pelaksana_Sistem'].value_counts().reset_index()
+                pelaksana_count.columns = ['Nama Pelaksana Utama', 'Jumlah']
+                fig2 = px.pie(pelaksana_count, names='Nama Pelaksana Utama', values='Jumlah', hole=0.4,
+                              title="Kontribusi Pelaksana Tugas (Nama Utama)",
                               template="plotly_white")
                 fig2.update_traces(textposition='inside', textinfo='percent+label')
                 fig2.update_layout(showlegend=False, margin=dict(l=0, r=0, t=40, b=0))
@@ -253,7 +262,7 @@ if check_password():
     # TAB 2: TABEL DATA
     with tab2:
         st.markdown("#### Pangkalan Data Form A")
-        st.markdown("Data di bawah ini disinkronkan secara *real-time* dari Google Spreadsheet dan sesuai dengan rentang waktu yang dipilih.")
+        st.markdown("Data disinkronkan secara *real-time*. Kolom 'Nama Pelaksana Tugas' tetap menampilkan data utuh sesuai input.")
         st.dataframe(
             df_tampil, 
             use_container_width=True, 
