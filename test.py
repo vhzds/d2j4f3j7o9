@@ -165,7 +165,7 @@ if check_password():
         st.markdown("### 🎛️ Panel Filter")
         st.info("Opsi di bawah ini akan menyesuaikan secara otomatis.")
         
-        # 1. FILTER RENTANG WAKTU (Paling Atas)
+        # 1. FILTER RENTANG WAKTU
         st.markdown("#### 📅 Waktu Kejadian")
         tanggal_valid = df['Tanggal_Sistem'].dropna()
         if not tanggal_valid.empty:
@@ -182,7 +182,6 @@ if check_password():
             max_value=max_date
         )
         
-        # Proses Filter Waktu
         if len(rentang_tanggal) == 2:
             start_date, end_date = rentang_tanggal
             if start_date == min_date and end_date == max_date:
@@ -194,25 +193,23 @@ if check_password():
         else:
             mask_waktu = pd.Series(True, index=df.index)
             
-        df_waktu = df[mask_waktu] # Dataframe hasil saringan waktu
+        df_waktu = df[mask_waktu] 
         
         st.markdown("---")
         
-        # 2. FILTER TAHAPAN (Menyesuaikan dengan Waktu)
+        # 2. FILTER TAHAPAN 
         tahapan_list = sorted([str(x) for x in df_waktu['Tahapan yang diawasi'].dropna().unique() if x])
         selected_tahapan = st.multiselect("Tahapan Pengawasan", tahapan_list, placeholder="Pilih Tahapan...")
 
-        # Proses Filter Tahapan
         if not selected_tahapan:
             df_tahapan = df_waktu
         else:
             df_tahapan = df_waktu[df_waktu['Tahapan yang diawasi'].isin(selected_tahapan)]
 
-        # 3. FILTER PELAKSANA (Menyesuaikan dengan Waktu DAN Tahapan)
+        # 3. FILTER PELAKSANA 
         pelaksana_list = sorted([str(x) for x in df_tahapan['Pelaksana_Sistem'].dropna().unique() if x])
         selected_pelaksana = st.multiselect("Pelaksana Tugas Utama", pelaksana_list, placeholder="Pilih Pelaksana...")
 
-        # Proses Filter Akhir
         if not selected_pelaksana:
             df_filtered = df_tahapan
         else:
@@ -233,13 +230,15 @@ if check_password():
     # --- TAB MENU NAVIGASI ---
     tab1, tab2 = st.tabs(["📈 Analisis Visual", "📑 Detail Tabel Data"])
 
-    # TAB 1: GRAFIK VISUAL
+    # TAB 1: GRAFIK VISUAL (SEKARANG ADA 4 GRAFIK)
     with tab1:
         st.markdown("#### Ringkasan Grafik Pengawasan")
+        
+        # --- BARIS PERTAMA GRAFIK ---
         c1, c2 = st.columns(2)
         
         with c1:
-            if not df_filtered.empty:
+            if not df_filtered.empty and 'Tahapan yang diawasi' in df_filtered.columns:
                 tahapan_count = df_filtered['Tahapan yang diawasi'].value_counts().reset_index()
                 tahapan_count.columns = ['Tahapan', 'Jumlah']
                 fig1 = px.bar(tahapan_count, x='Jumlah', y='Tahapan', orientation='h', 
@@ -249,20 +248,61 @@ if check_password():
                 fig1.update_layout(showlegend=False, margin=dict(l=0, r=0, t=40, b=0))
                 st.plotly_chart(fig1, use_container_width=True)
             else:
-                st.info("Tidak ada data laporan yang sesuai dengan filter.")
+                st.info("Tidak ada data laporan yang sesuai.")
 
         with c2:
-            if not df_filtered.empty:
+            if not df_filtered.empty and 'Pelaksana_Sistem' in df_filtered.columns:
                 pelaksana_count = df_filtered['Pelaksana_Sistem'].value_counts().reset_index()
                 pelaksana_count.columns = ['Nama Pelaksana Utama', 'Jumlah']
                 fig2 = px.pie(pelaksana_count, names='Nama Pelaksana Utama', values='Jumlah', hole=0.4,
-                              title="Kontribusi Pelaksana Tugas (Nama Utama)",
+                              title="Kontribusi Pelaksana Tugas",
                               template="plotly_white")
                 fig2.update_traces(textposition='inside', textinfo='percent+label')
                 fig2.update_layout(showlegend=False, margin=dict(l=0, r=0, t=40, b=0))
                 st.plotly_chart(fig2, use_container_width=True)
             else:
-                st.info("Tidak ada data pelaksana yang sesuai dengan filter.")
+                st.info("Tidak ada data pelaksana yang sesuai.")
+                
+        st.markdown("<br>", unsafe_allow_html=True) # Jarak antar baris grafik
+
+        # --- BARIS KEDUA GRAFIK (SASARAN & BENTUK) ---
+        c3, c4 = st.columns(2)
+        
+        with c3:
+            if not df_filtered.empty and 'Sasaran' in df_filtered.columns:
+                # Menghapus baris yang nilai Sasarannya kosong agar tidak mengganggu grafik
+                df_sasaran = df_filtered[df_filtered['Sasaran'].notna() & (df_filtered['Sasaran'] != '')]
+                if not df_sasaran.empty:
+                    sasaran_count = df_sasaran['Sasaran'].value_counts().reset_index()
+                    sasaran_count.columns = ['Sasaran', 'Jumlah']
+                    fig3 = px.bar(sasaran_count, x='Jumlah', y='Sasaran', orientation='h', 
+                                  color='Sasaran', text='Jumlah', 
+                                  title="Distribusi Laporan per Sasaran",
+                                  template="plotly_white")
+                    fig3.update_layout(showlegend=False, margin=dict(l=0, r=0, t=40, b=0))
+                    st.plotly_chart(fig3, use_container_width=True)
+                else:
+                    st.info("Seluruh kolom Sasaran kosong pada data yang Anda filter.")
+            else:
+                st.info("Tidak ada data Sasaran yang sesuai.")
+
+        with c4:
+            if not df_filtered.empty and 'Bentuk' in df_filtered.columns:
+                # Menghapus baris yang nilai Bentuknya kosong agar tidak mengganggu grafik
+                df_bentuk = df_filtered[df_filtered['Bentuk'].notna() & (df_filtered['Bentuk'] != '')]
+                if not df_bentuk.empty:
+                    bentuk_count = df_bentuk['Bentuk'].value_counts().reset_index()
+                    bentuk_count.columns = ['Bentuk', 'Jumlah']
+                    fig4 = px.pie(bentuk_count, names='Bentuk', values='Jumlah', hole=0.4,
+                                  title="Proporsi Bentuk Pengawasan",
+                                  template="plotly_white")
+                    fig4.update_traces(textposition='inside', textinfo='percent+label')
+                    fig4.update_layout(showlegend=False, margin=dict(l=0, r=0, t=40, b=0))
+                    st.plotly_chart(fig4, use_container_width=True)
+                else:
+                    st.info("Seluruh kolom Bentuk kosong pada data yang Anda filter.")
+            else:
+                st.info("Tidak ada data Bentuk yang sesuai.")
 
     # TAB 2: TABEL DATA
     with tab2:
