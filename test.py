@@ -18,9 +18,9 @@ st.set_page_config(
 # --- 2. CUSTOM CSS ---
 st.markdown("""
 <style>
+    /* Menyembunyikan menu bawaan bagian kanan dan footer, tapi membiarkan header (tombol sidebar) tetap muncul */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    header {visibility: hidden;}
 
     div[data-testid="metric-container"] {
         background-color: #ffffff;
@@ -209,7 +209,6 @@ if check_password():
             df_tahapan = df_waktu[df_waktu['Tahapan yang diawasi'].isin(selected_tahapan)]
 
         # 3. FILTER PELAKSANA (Menyesuaikan dengan Waktu DAN Tahapan)
-        # Daftar nama pelaksana sekarang diambil dari df_tahapan, BUKAN dari df keseluruhan
         pelaksana_list = sorted([str(x) for x in df_tahapan['Pelaksana_Sistem'].dropna().unique() if x])
         selected_pelaksana = st.multiselect("Pelaksana Tugas Utama", pelaksana_list, placeholder="Pilih Pelaksana...")
 
