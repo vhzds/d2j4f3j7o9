@@ -58,7 +58,7 @@ if check_password():
         client = gspread.authorize(creds)
         
         # Link spreadsheet Anda
-        sheet_url = "https://docs.google.com/spreadsheets/d/11qKowHN9IYt2pGteigPsYBFJxj4WNuPD9Z2bMI-PRoM/edit"
+        sheet_url = "https://docs.google.com/spreadsheets/d/11qKowHN9IYt2pGteigPsYBFJxj4WNuPD9Z2bMI-PRoM"
         sheet = client.open_by_url(sheet_url).sheet1
         
         data = sheet.get_all_records()
