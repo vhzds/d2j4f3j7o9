@@ -18,7 +18,7 @@ st.set_page_config(
 # --- 2. CUSTOM CSS ---
 st.markdown("""
 <style>
-    /* Menyembunyikan menu bawaan bagian kanan dan footer, tapi membiarkan header (tombol sidebar) tetap muncul */
+    /* Menyembunyikan menu bawaan bagian kanan dan footer */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
 
@@ -160,10 +160,10 @@ if check_password():
         st.error(f"Gagal mengambil data. Detail: {e}")
         st.stop()
 
-    # --- SIDEBAR: FILTER DINAMIS (CASCADING) ---
+    # --- SIDEBAR: FILTER DINAMIS (CASCADING 5 TINGKAT) ---
     with st.sidebar:
         st.markdown("### 🎛️ Panel Filter")
-        st.info("Opsi di bawah ini akan menyesuaikan secara otomatis.")
+        st.info("Pilihan akan menyusut otomatis menyesuaikan data yang tersedia.")
         
         # 1. FILTER RENTANG WAKTU
         st.markdown("#### 📅 Waktu Kejadian")
@@ -201,19 +201,31 @@ if check_password():
         tahapan_list = sorted([str(x) for x in df_waktu['Tahapan yang diawasi'].dropna().unique() if x])
         selected_tahapan = st.multiselect("Tahapan Pengawasan", tahapan_list, placeholder="Pilih Tahapan...")
 
-        if not selected_tahapan:
-            df_tahapan = df_waktu
-        else:
-            df_tahapan = df_waktu[df_waktu['Tahapan yang diawasi'].isin(selected_tahapan)]
+        df_tahapan = df_waktu if not selected_tahapan else df_waktu[df_waktu['Tahapan yang diawasi'].isin(selected_tahapan)]
 
         # 3. FILTER PELAKSANA 
         pelaksana_list = sorted([str(x) for x in df_tahapan['Pelaksana_Sistem'].dropna().unique() if x])
         selected_pelaksana = st.multiselect("Pelaksana Tugas Utama", pelaksana_list, placeholder="Pilih Pelaksana...")
 
-        if not selected_pelaksana:
-            df_filtered = df_tahapan
+        df_pelaksana = df_tahapan if not selected_pelaksana else df_tahapan[df_tahapan['Pelaksana_Sistem'].isin(selected_pelaksana)]
+        
+        # 4. FILTER SASARAN (BARU)
+        if 'Sasaran' in df_pelaksana.columns:
+            sasaran_list = sorted([str(x) for x in df_pelaksana['Sasaran'].dropna().unique() if x and x.strip() != ''])
         else:
-            df_filtered = df_tahapan[df_tahapan['Pelaksana_Sistem'].isin(selected_pelaksana)]
+            sasaran_list = []
+        selected_sasaran = st.multiselect("Sasaran Pengawasan", sasaran_list, placeholder="Pilih Sasaran...")
+
+        df_sasaran = df_pelaksana if not selected_sasaran else df_pelaksana[df_pelaksana['Sasaran'].isin(selected_sasaran)]
+        
+        # 5. FILTER BENTUK (BARU)
+        if 'Bentuk' in df_sasaran.columns:
+            bentuk_list = sorted([str(x) for x in df_sasaran['Bentuk'].dropna().unique() if x and x.strip() != ''])
+        else:
+            bentuk_list = []
+        selected_bentuk = st.multiselect("Bentuk Pengawasan", bentuk_list, placeholder="Pilih Bentuk...")
+
+        df_filtered = df_sasaran if not selected_bentuk else df_sasaran[df_sasaran['Bentuk'].isin(selected_bentuk)]
 
 
     # --- PEMBERSIHAN DATA UNTUK DITAMPILKAN ---
@@ -230,7 +242,7 @@ if check_password():
     # --- TAB MENU NAVIGASI ---
     tab1, tab2 = st.tabs(["📈 Analisis Visual", "📑 Detail Tabel Data"])
 
-    # TAB 1: GRAFIK VISUAL (SEKARANG ADA 4 GRAFIK)
+    # TAB 1: GRAFIK VISUAL (4 GRAFIK)
     with tab1:
         st.markdown("#### Ringkasan Grafik Pengawasan")
         
@@ -263,17 +275,16 @@ if check_password():
             else:
                 st.info("Tidak ada data pelaksana yang sesuai.")
                 
-        st.markdown("<br>", unsafe_allow_html=True) # Jarak antar baris grafik
+        st.markdown("<br>", unsafe_allow_html=True) 
 
-        # --- BARIS KEDUA GRAFIK (SASARAN & BENTUK) ---
+        # --- BARIS KEDUA GRAFIK ---
         c3, c4 = st.columns(2)
         
         with c3:
             if not df_filtered.empty and 'Sasaran' in df_filtered.columns:
-                # Menghapus baris yang nilai Sasarannya kosong agar tidak mengganggu grafik
-                df_sasaran = df_filtered[df_filtered['Sasaran'].notna() & (df_filtered['Sasaran'] != '')]
-                if not df_sasaran.empty:
-                    sasaran_count = df_sasaran['Sasaran'].value_counts().reset_index()
+                df_sasaran_chart = df_filtered[df_filtered['Sasaran'].notna() & (df_filtered['Sasaran'] != '')]
+                if not df_sasaran_chart.empty:
+                    sasaran_count = df_sasaran_chart['Sasaran'].value_counts().reset_index()
                     sasaran_count.columns = ['Sasaran', 'Jumlah']
                     fig3 = px.bar(sasaran_count, x='Jumlah', y='Sasaran', orientation='h', 
                                   color='Sasaran', text='Jumlah', 
@@ -288,10 +299,9 @@ if check_password():
 
         with c4:
             if not df_filtered.empty and 'Bentuk' in df_filtered.columns:
-                # Menghapus baris yang nilai Bentuknya kosong agar tidak mengganggu grafik
-                df_bentuk = df_filtered[df_filtered['Bentuk'].notna() & (df_filtered['Bentuk'] != '')]
-                if not df_bentuk.empty:
-                    bentuk_count = df_bentuk['Bentuk'].value_counts().reset_index()
+                df_bentuk_chart = df_filtered[df_filtered['Bentuk'].notna() & (df_filtered['Bentuk'] != '')]
+                if not df_bentuk_chart.empty:
+                    bentuk_count = df_bentuk_chart['Bentuk'].value_counts().reset_index()
                     bentuk_count.columns = ['Bentuk', 'Jumlah']
                     fig4 = px.pie(bentuk_count, names='Bentuk', values='Jumlah', hole=0.4,
                                   title="Proporsi Bentuk Pengawasan",
