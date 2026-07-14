@@ -47,13 +47,23 @@ if check_password():
     st.title("📊 Dashboard Database Form A Pengawasan")
     st.success("Berhasil login!")
 
-    # Fungsi untuk mengambil data dari Google Sheets
+# Fungsi untuk mengambil data dari Google Sheets (Versi Diperbarui)
     @st.cache_data(ttl=60)
     def load_data():
-        creds_json = st.secrets["google_credentials"]
-        creds_dict = json.loads(creds_json)
+        # Mengambil rahasia (mendukung berbagai format penulisan Secrets)
+        creds_secret = st.secrets["google_credentials"]
         
-        scopes = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+        if isinstance(creds_secret, str):
+            creds_dict = json.loads(creds_secret)
+        else:
+            creds_dict = dict(creds_secret)
+            
+        # Memperluas izin akses (Scopes) ke Drive dan Sheets agar aman
+        scopes = [
+            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/drive'
+        ]
+        
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client = gspread.authorize(creds)
         
@@ -66,12 +76,13 @@ if check_password():
         df = df.replace("", None)
         return df
 
+    # Blok untuk menampilkan ERROR ASLI jika masih gagal
     try:
         df = load_data()
     except Exception as e:
-        st.error("Gagal terhubung ke Spreadsheet. Pastikan pengaturan Secrets sudah benar.")
+        st.error(f"🚨 Gagal terhubung ke Google. Detail error aslinya: {e}")
         st.stop()
-
+        
     # --- SIDEBAR: FILTER DATA ---
     st.sidebar.header("🔍 Filter Data")
     
