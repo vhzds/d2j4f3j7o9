@@ -15,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 2. CUSTOM CSS UNTUK TAMPILAN PROFESIONAL ---
+# --- 2. CUSTOM CSS ---
 st.markdown("""
 <style>
     #MainMenu {visibility: hidden;}
@@ -100,7 +100,7 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-    # Fungsi Ambil Data & Ekstrak Data
+    # Fungsi Ambil Data
     @st.cache_data(ttl=60)
     def load_data():
         creds_secret = st.secrets["google_credentials"]
@@ -120,7 +120,7 @@ if check_password():
         df = pd.DataFrame(raw_data[1:], columns=raw_data[0]) 
         df = df.replace("", None)
         
-        # 1. LOGIKA EKSTRAKSI TANGGAL
+        # Ekstraksi Tanggal
         def ekstrak_tanggal_indo(teks):
             if not isinstance(teks, str):
                 return pd.NaT
@@ -144,14 +144,12 @@ if check_password():
                         return pd.NaT
             return pd.NaT
         
-        # 2. LOGIKA EKSTRAKSI NAMA PELAKSANA PERTAMA
+        # Ekstraksi Nama Pertama
         def ekstrak_pelaksana_utama(teks):
             if isinstance(teks, str) and teks.strip():
-                # Memotong string berdasarkan koma dan mengambil indeks ke-0 (sebelum koma pertama)
                 return teks.split(',')[0].strip()
             return teks
 
-        # Terapkan ekstraksi ke kolom-kolom sistem
         df['Tanggal_Sistem'] = df['Waktu dan Tempat'].apply(ekstrak_tanggal_indo)
         df['Pelaksana_Sistem'] = df['Nama Pelaksana Tugas'].apply(ekstrak_pelaksana_utama)
         
@@ -167,7 +165,7 @@ if check_password():
     # --- SIDEBAR: FILTER CANGGIH ---
     with st.sidebar:
         st.markdown("### 🎛️ Panel Filter")
-        st.markdown("Gunakan panel ini untuk menyaring data yang ditampilkan.")
+        st.info("Biarkan kosong untuk menampilkan semua data.")
         
         # 1. Filter Rentang Waktu
         st.markdown("#### 📅 Waktu Kejadian")
@@ -180,30 +178,44 @@ if check_password():
             max_date = datetime.date.today()
             
         rentang_tanggal = st.date_input(
-            "Pilih dari tanggal berapa hingga tanggal berapa:",
+            "Pilih Rentang Tanggal:",
             value=(min_date, max_date),
             min_value=min_date,
             max_value=max_date
         )
-
+        
         st.markdown("---")
         
-        # 2. Filter Tahapan
+        # 2. Filter Tahapan (Default dikosongkan)
         tahapan_list = [x for x in df['Tahapan yang diawasi'].dropna().unique() if x]
-        selected_tahapan = st.multiselect("Tahapan Pengawasan", tahapan_list, default=tahapan_list)
+        selected_tahapan = st.multiselect("Tahapan Pengawasan", tahapan_list, placeholder="Pilih Tahapan...")
 
-        # 3. Filter Pelaksana (Menggunakan Pelaksana_Sistem)
+        # 3. Filter Pelaksana (Default dikosongkan)
         pelaksana_list = [x for x in df['Pelaksana_Sistem'].dropna().unique() if x]
-        selected_pelaksana = st.multiselect("Pelaksana Tugas Utama", pelaksana_list, default=pelaksana_list)
+        selected_pelaksana = st.multiselect("Pelaksana Tugas Utama", pelaksana_list, placeholder="Pilih Pelaksana...")
 
-    # --- PENERAPAN LOGIKA FILTER ---
-    mask_tahapan = df['Tahapan yang diawasi'].isin(selected_tahapan)
-    # Masking pelaksana sekarang merujuk pada nama sebelum koma
-    mask_pelaksana = df['Pelaksana_Sistem'].isin(selected_pelaksana)
+    # --- PENERAPAN LOGIKA FILTER (SUDAH DIPERBAIKI) ---
     
+    # Logika Tahapan: Jika list kosong, anggap semua benar (True). Jika ada isi, saring data.
+    if not selected_tahapan:
+        mask_tahapan = pd.Series(True, index=df.index)
+    else:
+        mask_tahapan = df['Tahapan yang diawasi'].isin(selected_tahapan)
+
+    # Logika Pelaksana: Jika list kosong, anggap semua benar (True). Jika ada isi, saring data.
+    if not selected_pelaksana:
+        mask_pelaksana = pd.Series(True, index=df.index)
+    else:
+        mask_pelaksana = df['Pelaksana_Sistem'].isin(selected_pelaksana)
+    
+    # Logika Waktu: Agar data yang tanggalnya keliru/kosong tetap tampil jika filter tanggal tidak diubah
     if len(rentang_tanggal) == 2:
         start_date, end_date = rentang_tanggal
-        mask_waktu = df['Tanggal_Sistem'].between(start_date, end_date)
+        # Jika rentang masih bawaan (min sampai max), tampilkan SEMUA data termasuk yang tanggalnya kosong (NaT)
+        if start_date == min_date and end_date == max_date:
+            mask_waktu = pd.Series(True, index=df.index)
+        else:
+            mask_waktu = df['Tanggal_Sistem'].between(start_date, end_date)
     elif len(rentang_tanggal) == 1:
         mask_waktu = df['Tanggal_Sistem'] == rentang_tanggal[0]
     else:
@@ -212,14 +224,12 @@ if check_password():
     # Gabungkan semua filter
     df_filtered = df[mask_tahapan & mask_pelaksana & mask_waktu]
     
-    # Sembunyikan kolom 'Tanggal_Sistem' dan 'Pelaksana_Sistem' dari tabel akhir
     df_tampil = df_filtered.drop(columns=['Tanggal_Sistem', 'Pelaksana_Sistem'], errors='ignore')
 
     # --- METRIK INDIKATOR UTAMA ---
     st.markdown("<br>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
     m1.metric("📂 Total Laporan Terinput", f"{len(df_filtered)} Laporan")
-    # Menghitung pelaksana berdasarkan nama utama (sebelum koma)
     m2.metric("👥 Pelaksana Tugas Aktif", f"{df_filtered['Pelaksana_Sistem'].nunique()} Orang")
     m3.metric("📊 Tahapan Diawasi", f"{df_filtered['Tahapan yang diawasi'].nunique()} Kategori")
     st.markdown("<br>", unsafe_allow_html=True)
@@ -247,7 +257,6 @@ if check_password():
 
         with c2:
             if not df_filtered.empty:
-                # Membangun Pie Chart berdasarkan nama pertama saja
                 pelaksana_count = df_filtered['Pelaksana_Sistem'].value_counts().reset_index()
                 pelaksana_count.columns = ['Nama Pelaksana Utama', 'Jumlah']
                 fig2 = px.pie(pelaksana_count, names='Nama Pelaksana Utama', values='Jumlah', hole=0.4,
