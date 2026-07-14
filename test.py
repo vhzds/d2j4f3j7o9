@@ -34,6 +34,7 @@ st.markdown("""
         box-shadow: 2px 8px 16px rgba(0,0,0,0.12);
     }
     
+    /* Desain umum tombol (Login & Logout) */
     div.stButton > button:first-child {
         background-color: #004aad;
         color: white;
@@ -159,12 +160,22 @@ if check_password():
         st.stop()
 
 
-    # --- SIDEBAR: CROSS-FILTERING MULTI-ARAH (100% DINAMIS) ---
+    # --- SIDEBAR: CROSS-FILTERING MULTI-ARAH ---
     with st.sidebar:
         st.markdown("### 🎛️ Panel Filter")
-        st.info("Setiap opsi akan otomatis menyusut mengikuti pilihan Anda di filter mana pun.")
         
-        # 1. FILTER RENTANG WAKTU (Sebagai Batas Utama)
+        # --- TOMBOL RESET FILTER ---
+        if st.button("🔄 Reset Semua Filter"):
+            # Menghapus semua memori filter agar kembali ke kondisi default
+            for key in ['sel_tahapan', 'sel_pelaksana', 'sel_sasaran', 'sel_bentuk', 'sel_waktu']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun() # Memuat ulang aplikasi
+            
+        st.info("Pilihan akan otomatis menyusut mengikuti opsi yang Anda klik.")
+        st.markdown("---")
+        
+        # 1. FILTER RENTANG WAKTU
         st.markdown("#### 📅 Waktu Kejadian")
         tanggal_valid = df['Tanggal_Sistem'].dropna()
         if not tanggal_valid.empty:
@@ -217,34 +228,27 @@ if check_password():
         mask_sasaran = make_mask('Sasaran', cur_sasaran)
         mask_bentuk = make_mask('Bentuk', cur_bentuk)
 
-        # --- Fungsi Pembuat Daftar Opsi (Mencegah Error Pilihan Hilang) ---
+        # --- Fungsi Pembuat Daftar Opsi Dinamis ---
         def get_options(mask, col, current_selections):
             if col not in df.columns:
                 return []
             valid_df = df[mask]
-            # Ambil nilai unik yang tidak kosong atau sekadar strip '-'
             opts = set([str(x).strip() for x in valid_df[col].dropna() if str(x).strip() not in ['', '-']])
-            # Pastikan nilai yang sedang dipilih tetap ada di daftar agar tidak error
             for sel in current_selections:
                 if str(sel).strip() != '':
                     opts.add(str(sel).strip())
             return sorted(list(opts))
 
-        # --- RENDER WIDGET (Opsi ditentukan oleh semua filter lain KECUALI dirinya sendiri) ---
-        
-        # Tahapan disaring oleh Waktu + Pelaksana + Sasaran + Bentuk
+        # --- RENDER WIDGET MULTISELECT ---
         tahapan_opts = get_options(mask_waktu & mask_pelaksana & mask_sasaran & mask_bentuk, 'Tahapan yang diawasi', cur_tahapan)
         st.multiselect("Tahapan Pengawasan", tahapan_opts, key='sel_tahapan', placeholder="Semua Tahapan...")
 
-        # Pelaksana disaring oleh Waktu + Tahapan + Sasaran + Bentuk
         pelaksana_opts = get_options(mask_waktu & mask_tahapan & mask_sasaran & mask_bentuk, 'Pelaksana_Sistem', cur_pelaksana)
         st.multiselect("Pelaksana Tugas Utama", pelaksana_opts, key='sel_pelaksana', placeholder="Semua Pelaksana...")
 
-        # Sasaran disaring oleh Waktu + Tahapan + Pelaksana + Bentuk
         sasaran_opts = get_options(mask_waktu & mask_tahapan & mask_pelaksana & mask_bentuk, 'Sasaran', cur_sasaran)
         st.multiselect("Sasaran Pengawasan", sasaran_opts, key='sel_sasaran', placeholder="Semua Sasaran...")
 
-        # Bentuk disaring oleh Waktu + Tahapan + Pelaksana + Sasaran
         bentuk_opts = get_options(mask_waktu & mask_tahapan & mask_pelaksana & mask_sasaran, 'Bentuk', cur_bentuk)
         st.multiselect("Bentuk Pengawasan", bentuk_opts, key='sel_bentuk', placeholder="Semua Bentuk...")
 
