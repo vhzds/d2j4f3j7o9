@@ -136,14 +136,15 @@ if check_password():
         df = pd.DataFrame(raw_data[1:], columns=raw_columns) 
         df = df.replace("", None)
         
-        # --- PERUBAHAN NAMA KOLOM SERENTAK (DISESUAIKAN PERMINTAAN TERBARU) ---
+        # --- PERUBAHAN NAMA KOLOM SERENTAK (DISESUAIKAN KOREKSI TERBARU) ---
         df = df.rename(columns={
-            'Tempat KejadianSengketa': 'Peserta Pemilu',
-            'PesertaPemilu': 'Tempat Kejadian Sengketa',
-            # Kemungkinan nama kolom variasi spasi / format lama spreadsheet:
-            'Tempat Kejadian Sengketa': 'Peserta Pemilu',
-            'Peserta Pemilu': 'Tempat Kejadian Sengketa',
-            'Informasi Sengketa Pemilu': 'Peserta Pemilu'
+            # Variasi kelompok 1 diubah menjadi 'Peserta'
+            'Tempat Kejadian Sengketa': 'Peserta',
+            'Tempat KejadianSengketa': 'Peserta',
+            'Informasi Sengketa Pemilu': 'Peserta',
+            # Variasi kelompok 2 diubah menjadi 'Tempat Sengketa'
+            'Peserta Pemilu': 'Tempat Sengketa',
+            'PesertaPemilu': 'Tempat Sengketa'
         })
         
         # Terapkan pembersih kolom SEKALI LAGI untuk mencegah nama kembar
