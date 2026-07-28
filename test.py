@@ -119,16 +119,15 @@ if check_password():
         df = pd.DataFrame(raw_data[1:], columns=raw_data[0]) 
         df = df.replace("", None)
         
+        # 1. Ekstraksi Tanggal dari 'Waktu dan Tempat'
         def ekstrak_tanggal_indo(teks):
             if not isinstance(teks, str):
                 return pd.NaT
-            
             daftar_bulan = {
                 'januari': 1, 'februari': 2, 'maret': 3, 'april': 4,
                 'mei': 5, 'juni': 6, 'juli': 7, 'agustus': 8,
                 'september': 9, 'oktober': 10, 'november': 11, 'desember': 12
             }
-            
             pencarian = re.search(r'(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})', teks.lower())
             if pencarian:
                 hari = int(pencarian.group(1))
@@ -141,13 +140,35 @@ if check_password():
                         return pd.NaT
             return pd.NaT
         
+        # 2. Ekstraksi Nama Utama (Sebelum Koma)
         def ekstrak_pelaksana_utama(teks):
             if isinstance(teks, str) and teks.strip():
                 return teks.split(',')[0].strip()
             return teks
 
+        # 3. Ekstraksi Tanggal dari kolom Timestamps (Untuk filter kalender)
+        col_ts = None
+        for col_name in ['Timestamps', 'Timestamp', 'Waktu Input']:
+            if col_name in df.columns:
+                col_ts = col_name
+                break
+                
+        def ekstrak_tanggal_ts(val):
+            if not val or not str(val).strip():
+                return pd.NaT
+            try:
+                # dayfirst=True untuk format tanggal standar Indonesia (DD/MM/YYYY)
+                return pd.to_datetime(str(val).strip(), dayfirst=True).date()
+            except:
+                return pd.NaT
+
         df['Tanggal_Sistem'] = df['Waktu dan Tempat'].apply(ekstrak_tanggal_indo)
         df['Pelaksana_Sistem'] = df['Nama Pelaksana Tugas'].apply(ekstrak_pelaksana_utama)
+        
+        if col_ts:
+            df['TS_Tanggal_Sistem'] = df[col_ts].apply(ekstrak_tanggal_ts)
+        else:
+            df['TS_Tanggal_Sistem'] = pd.Series([pd.NaT] * len(df))
         
         return df
 
@@ -158,10 +179,8 @@ if check_password():
         st.error(f"Gagal mengambil data. Detail: {e}")
         st.stop()
 
-    # Mendeteksi nama kolom timestamp secara otomatis ('Timestamp' vs 'Timestamps')
-    col_ts = 'Timestamps' if 'Timestamps' in df.columns else ('Timestamp' if 'Timestamp' in df.columns else 'Timestamps')
 
-    # --- SIDEBAR: CROSS-FILTERING MULTI-ARAH (7 TINGKAT SILANG) ---
+    # --- SIDEBAR: CROSS-FILTERING MULTI-ARAH ---
     with st.sidebar:
         st.markdown("### 🎛️ Panel Filter")
         
@@ -175,7 +194,7 @@ if check_password():
         st.info("Pilihan akan otomatis menyusut mengikuti opsi yang Anda klik.")
         st.markdown("---")
         
-        # 1. FILTER RENTANG WAKTU KEJADIAN
+        # 1. FILTER RENTANG WAKTU KEJADIAN (KALENDER 1)
         st.markdown("#### 📅 Waktu Kejadian")
         tanggal_valid = df['Tanggal_Sistem'].dropna()
         if not tanggal_valid.empty:
@@ -186,7 +205,7 @@ if check_password():
             max_date = datetime.date.today()
             
         rentang_tanggal = st.date_input(
-            "Pilih Rentang Tanggal:",
+            "Pilih Rentang Waktu Kejadian:",
             value=(min_date, max_date),
             min_value=min_date,
             max_value=max_date,
@@ -206,8 +225,39 @@ if check_password():
 
         st.markdown("---")
 
-        # --- Inisialisasi Memori Filter ---
-        for key in ['sel_tahapan', 'sel_pelaksana', 'sel_sasaran', 'sel_bentuk', 'sel_lhp', 'sel_ts']:
+        # 2. FILTER RENTANG WAKTU INPUT / TIMESTAMPS (KALENDER 2)
+        st.markdown("#### 🕒 Waktu Input (Timestamps)")
+        ts_valid = df['TS_Tanggal_Sistem'].dropna()
+        if not ts_valid.empty:
+            min_ts_date = ts_valid.min()
+            max_ts_date = ts_valid.max()
+        else:
+            min_ts_date = datetime.date(2023, 1, 1)
+            max_ts_date = datetime.date.today()
+            
+        rentang_ts = st.date_input(
+            "Pilih Rentang Tanggal Input:",
+            value=(min_ts_date, max_ts_date),
+            min_value=min_ts_date,
+            max_value=max_ts_date,
+            key="sel_ts"
+        )
+        
+        if len(rentang_ts) == 2:
+            start_ts, end_ts = rentang_ts
+            if start_ts == min_ts_date and end_ts == max_ts_date:
+                mask_ts = pd.Series(True, index=df.index)
+            else:
+                mask_ts = df['TS_Tanggal_Sistem'].between(start_ts, end_ts)
+        elif len(rentang_ts) == 1:
+            mask_ts = df['TS_Tanggal_Sistem'] == rentang_ts[0]
+        else:
+            mask_ts = pd.Series(True, index=df.index)
+
+        st.markdown("---")
+
+        # --- Inisialisasi Memori Filter Multiselect ---
+        for key in ['sel_tahapan', 'sel_pelaksana', 'sel_sasaran', 'sel_bentuk', 'sel_lhp']:
             if key not in st.session_state:
                 st.session_state[key] = []
 
@@ -216,7 +266,6 @@ if check_password():
         cur_sasaran = st.session_state['sel_sasaran']
         cur_bentuk = st.session_state['sel_bentuk']
         cur_lhp = st.session_state['sel_lhp']
-        cur_ts = st.session_state['sel_ts']
 
         # --- Fungsi Pembuat Syarat Filter (Mask) ---
         def make_mask(col, values):
@@ -229,7 +278,6 @@ if check_password():
         mask_sasaran = make_mask('Sasaran', cur_sasaran)
         mask_bentuk = make_mask('Bentuk', cur_bentuk)
         mask_lhp = make_mask('Nomor LHP', cur_lhp)
-        mask_ts = make_mask(col_ts, cur_ts)
 
         # --- Fungsi Pembuat Daftar Opsi Dinamis ---
         def get_options(mask, col, current_selections):
@@ -242,31 +290,28 @@ if check_password():
                     opts.add(str(sel).strip())
             return sorted(list(opts))
 
-        # --- RENDER WIDGET MULTISELECT (7 TINGKAT SILANG) ---
-        tahapan_opts = get_options(mask_waktu & mask_pelaksana & mask_sasaran & mask_bentuk & mask_lhp & mask_ts, 'Tahapan yang diawasi', cur_tahapan)
+        # --- RENDER WIDGET MULTISELECT (5 TINGKAT SILANG) ---
+        tahapan_opts = get_options(mask_waktu & mask_ts & mask_pelaksana & mask_sasaran & mask_bentuk & mask_lhp, 'Tahapan yang diawasi', cur_tahapan)
         st.multiselect("Tahapan Pengawasan", tahapan_opts, key='sel_tahapan', placeholder="Semua Tahapan...")
 
-        pelaksana_opts = get_options(mask_waktu & mask_tahapan & mask_sasaran & mask_bentuk & mask_lhp & mask_ts, 'Pelaksana_Sistem', cur_pelaksana)
+        pelaksana_opts = get_options(mask_waktu & mask_ts & mask_tahapan & mask_sasaran & mask_bentuk & mask_lhp, 'Pelaksana_Sistem', cur_pelaksana)
         st.multiselect("Pelaksana Tugas Utama", pelaksana_opts, key='sel_pelaksana', placeholder="Semua Pelaksana...")
 
-        sasaran_opts = get_options(mask_waktu & mask_tahapan & mask_pelaksana & mask_bentuk & mask_lhp & mask_ts, 'Sasaran', cur_sasaran)
+        sasaran_opts = get_options(mask_waktu & mask_ts & mask_tahapan & mask_pelaksana & mask_bentuk & mask_lhp, 'Sasaran', cur_sasaran)
         st.multiselect("Sasaran Pengawasan", sasaran_opts, key='sel_sasaran', placeholder="Semua Sasaran...")
 
-        bentuk_opts = get_options(mask_waktu & mask_tahapan & mask_pelaksana & mask_sasaran & mask_lhp & mask_ts, 'Bentuk', cur_bentuk)
+        bentuk_opts = get_options(mask_waktu & mask_ts & mask_tahapan & mask_pelaksana & mask_sasaran & mask_lhp, 'Bentuk', cur_bentuk)
         st.multiselect("Bentuk Pengawasan", bentuk_opts, key='sel_bentuk', placeholder="Semua Bentuk...")
         
-        lhp_opts = get_options(mask_waktu & mask_tahapan & mask_pelaksana & mask_sasaran & mask_bentuk & mask_ts, 'Nomor LHP', cur_lhp)
+        lhp_opts = get_options(mask_waktu & mask_ts & mask_tahapan & mask_pelaksana & mask_sasaran & mask_bentuk, 'Nomor LHP', cur_lhp)
         st.multiselect("Nomor LHP", lhp_opts, key='sel_lhp', placeholder="Semua Nomor LHP...")
 
-        ts_opts = get_options(mask_waktu & mask_tahapan & mask_pelaksana & mask_sasaran & mask_bentuk & mask_lhp, col_ts, cur_ts)
-        st.multiselect("Waktu Input (Timestamps)", ts_opts, key='sel_ts', placeholder="Semua Timestamps...")
-
         # --- GABUNGKAN SEMUA FILTER UNTUK DATAFRAME FINAL ---
-        df_filtered = df[mask_waktu & mask_tahapan & mask_pelaksana & mask_sasaran & mask_bentuk & mask_lhp & mask_ts]
+        df_filtered = df[mask_waktu & mask_ts & mask_tahapan & mask_pelaksana & mask_sasaran & mask_bentuk & mask_lhp]
 
 
     # --- PEMBERSIHAN DATA UNTUK DITAMPILKAN ---
-    df_tampil = df_filtered.drop(columns=['Tanggal_Sistem', 'Pelaksana_Sistem'], errors='ignore')
+    df_tampil = df_filtered.drop(columns=['Tanggal_Sistem', 'Pelaksana_Sistem', 'TS_Tanggal_Sistem'], errors='ignore')
 
     # --- METRIK INDIKATOR UTAMA ---
     st.markdown("<br>", unsafe_allow_html=True)
@@ -350,7 +395,7 @@ if check_password():
     # TAB 2: TABEL DATA
     with tab2:
         st.markdown("#### Pangkalan Data Form A")
-        st.markdown("Data disinkronkan secara *real-time*. Kolom 'Nama Pelaksana Tugas' tetap menampilkan data utuh sesuai input.")
+        st.markdown("Data disinkronkan secara *real-time*. Kolom 'Nama Pelaksana Tugas' dan 'Timestamps' tetap menampilkan data utuh sesuai input.")
         st.dataframe(
             df_tampil, 
             use_container_width=True, 
