@@ -15,12 +15,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 2. CUSTOM CSS UNTUK TAMPILAN PROFESIONAL ---
+# --- 2. CUSTOM CSS ---
 st.markdown("""
 <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    header {visibility: hidden;}
 
     div[data-testid="metric-container"] {
         background-color: #ffffff;
@@ -100,7 +99,7 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-    # Fungsi Ambil Data & Ekstrak Data
+    # Fungsi Ambil Data
     @st.cache_data(ttl=60)
     def load_data():
         creds_secret = st.secrets["google_credentials"]
@@ -117,26 +116,50 @@ if check_password():
         sheet = client.open_by_url(sheet_url).sheet1
         
         raw_data = sheet.get_all_values()
-        df = pd.DataFrame(raw_data[1:], columns=raw_data[0]) 
+        
+        # --- FUNGSI ANTI-KEMBAR (DEDUPLIKASI NAMA KOLOM) ---
+        def anti_kembar(kolom_list):
+            clean = []
+            seen = {}
+            for k in kolom_list:
+                k_str = str(k).strip()
+                if k_str in seen:
+                    seen[k_str] += 1
+                    clean.append(f"{k_str} ({seen[k_str]})")
+                else:
+                    seen[k_str] = 1
+                    clean.append(k_str)
+            return clean
+
+        # Terapkan pembersih kolom saat pertama kali membaca data
+        raw_columns = anti_kembar(raw_data[0])
+        df = pd.DataFrame(raw_data[1:], columns=raw_columns) 
         df = df.replace("", None)
         
-        # 1. LOGIKA EKSTRAKSI TANGGAL
+        # --- PERUBAHAN NAMA KOLOM SERENTAK (DISESUAIKAN) ---
+        df = df.rename(columns={
+            'Tempat Kejadian Sengketa': 'Peserta Pemilu',
+            'Informasi Sengketa Pemilu': 'Peserta Pemilu',
+            'Peserta Pemilu': 'Tempat Kejadian Sengketa'
+        })
+        
+        # Terapkan pembersih kolom SEKALI LAGI untuk mencegah nama kembar
+        df.columns = anti_kembar(df.columns)
+        
+        # 1. Ekstraksi Tanggal dari 'Waktu dan Tempat'
         def ekstrak_tanggal_indo(teks):
             if not isinstance(teks, str):
                 return pd.NaT
-            
             daftar_bulan = {
                 'januari': 1, 'februari': 2, 'maret': 3, 'april': 4,
                 'mei': 5, 'juni': 6, 'juli': 7, 'agustus': 8,
                 'september': 9, 'oktober': 10, 'november': 11, 'desember': 12
             }
-            
             pencarian = re.search(r'(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})', teks.lower())
             if pencarian:
                 hari = int(pencarian.group(1))
                 bulan_teks = pencarian.group(2)
                 tahun = int(pencarian.group(3))
-                
                 if bulan_teks in daftar_bulan:
                     try:
                         return datetime.date(tahun, daftar_bulan[bulan_teks], hari)
@@ -144,16 +167,34 @@ if check_password():
                         return pd.NaT
             return pd.NaT
         
-        # 2. LOGIKA EKSTRAKSI NAMA PELAKSANA PERTAMA
+        # 2. Ekstraksi Nama Utama (Sebelum Koma)
         def ekstrak_pelaksana_utama(teks):
             if isinstance(teks, str) and teks.strip():
-                # Memotong string berdasarkan koma dan mengambil indeks ke-0 (sebelum koma pertama)
                 return teks.split(',')[0].strip()
             return teks
 
-        # Terapkan ekstraksi ke kolom-kolom sistem
+        # 3. Ekstraksi Tanggal dari kolom Timestamps (Untuk filter kalender)
+        col_ts = None
+        for col_name in ['Timestamps', 'Timestamp', 'Waktu Input']:
+            if col_name in df.columns:
+                col_ts = col_name
+                break
+                
+        def ekstrak_tanggal_ts(val):
+            if not val or not str(val).strip():
+                return pd.NaT
+            try:
+                return pd.to_datetime(str(val).strip(), dayfirst=True).date()
+            except:
+                return pd.NaT
+
         df['Tanggal_Sistem'] = df['Waktu dan Tempat'].apply(ekstrak_tanggal_indo)
         df['Pelaksana_Sistem'] = df['Nama Pelaksana Tugas'].apply(ekstrak_pelaksana_utama)
+        
+        if col_ts:
+            df['TS_Tanggal_Sistem'] = df[col_ts].apply(ekstrak_tanggal_ts)
+        else:
+            df['TS_Tanggal_Sistem'] = pd.Series([pd.NaT] * len(df))
         
         return df
 
@@ -164,12 +205,22 @@ if check_password():
         st.error(f"Gagal mengambil data. Detail: {e}")
         st.stop()
 
-    # --- SIDEBAR: FILTER CANGGIH ---
+
+    # --- SIDEBAR: CROSS-FILTERING MULTI-ARAH ---
     with st.sidebar:
         st.markdown("### 🎛️ Panel Filter")
-        st.markdown("Gunakan panel ini untuk menyaring data yang ditampilkan.")
         
-        # 1. Filter Rentang Waktu
+        # --- TOMBOL RESET FILTER ---
+        if st.button("🔄 Reset Semua Filter"):
+            for key in ['sel_tahapan', 'sel_pelaksana', 'sel_sasaran', 'sel_bentuk', 'sel_lhp', 'sel_ts', 'sel_waktu']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun() 
+            
+        st.info("Pilihan akan otomatis menyusut mengikuti opsi yang Anda klik.")
+        st.markdown("---")
+        
+        # 1. FILTER RENTANG WAKTU KEJADIAN
         st.markdown("#### 📅 Waktu Kejadian")
         tanggal_valid = df['Tanggal_Sistem'].dropna()
         if not tanggal_valid.empty:
@@ -180,46 +231,118 @@ if check_password():
             max_date = datetime.date.today()
             
         rentang_tanggal = st.date_input(
-            "Pilih dari tanggal berapa hingga tanggal berapa:",
+            "Pilih Rentang Waktu Kejadian:",
             value=(min_date, max_date),
             min_value=min_date,
-            max_value=max_date
+            max_value=max_date,
+            key="sel_waktu"
         )
+        
+        if len(rentang_tanggal) == 2:
+            start_date, end_date = rentang_tanggal
+            if start_date == min_date and end_date == max_date:
+                mask_waktu = pd.Series(True, index=df.index)
+            else:
+                mask_waktu = df['Tanggal_Sistem'].between(start_date, end_date)
+        elif len(rentang_tanggal) == 1:
+            mask_waktu = df['Tanggal_Sistem'] == rentang_tanggal[0]
+        else:
+            mask_waktu = pd.Series(True, index=df.index)
 
         st.markdown("---")
+
+        # 2. FILTER RENTANG WAKTU INPUT / TIMESTAMPS
+        st.markdown("#### 🕒 Waktu Input (Timestamps)")
+        ts_valid = df['TS_Tanggal_Sistem'].dropna()
+        if not ts_valid.empty:
+            min_ts_date = ts_valid.min()
+            max_ts_date = ts_valid.max()
+        else:
+            min_ts_date = datetime.date(2023, 1, 1)
+            max_ts_date = datetime.date.today()
+            
+        rentang_ts = st.date_input(
+            "Pilih Rentang Tanggal Input:",
+            value=(min_ts_date, max_ts_date),
+            min_value=min_ts_date,
+            max_value=max_ts_date,
+            key="sel_ts"
+        )
         
-        # 2. Filter Tahapan
-        tahapan_list = [x for x in df['Tahapan yang diawasi'].dropna().unique() if x]
-        selected_tahapan = st.multiselect("Tahapan Pengawasan", tahapan_list, default=tahapan_list)
+        if len(rentang_ts) == 2:
+            start_ts, end_ts = rentang_ts
+            if start_ts == min_ts_date and end_ts == max_ts_date:
+                mask_ts = pd.Series(True, index=df.index)
+            else:
+                mask_ts = df['TS_Tanggal_Sistem'].between(start_ts, end_ts)
+        elif len(rentang_ts) == 1:
+            mask_ts = df['TS_Tanggal_Sistem'] == rentang_ts[0]
+        else:
+            mask_ts = pd.Series(True, index=df.index)
 
-        # 3. Filter Pelaksana (Menggunakan Pelaksana_Sistem)
-        pelaksana_list = [x for x in df['Pelaksana_Sistem'].dropna().unique() if x]
-        selected_pelaksana = st.multiselect("Pelaksana Tugas Utama", pelaksana_list, default=pelaksana_list)
+        st.markdown("---")
 
-    # --- PENERAPAN LOGIKA FILTER ---
-    mask_tahapan = df['Tahapan yang diawasi'].isin(selected_tahapan)
-    # Masking pelaksana sekarang merujuk pada nama sebelum koma
-    mask_pelaksana = df['Pelaksana_Sistem'].isin(selected_pelaksana)
-    
-    if len(rentang_tanggal) == 2:
-        start_date, end_date = rentang_tanggal
-        mask_waktu = df['Tanggal_Sistem'].between(start_date, end_date)
-    elif len(rentang_tanggal) == 1:
-        mask_waktu = df['Tanggal_Sistem'] == rentang_tanggal[0]
-    else:
-        mask_waktu = pd.Series(True, index=df.index)
+        # --- Inisialisasi Memori Filter Multiselect ---
+        for key in ['sel_tahapan', 'sel_pelaksana', 'sel_sasaran', 'sel_bentuk', 'sel_lhp']:
+            if key not in st.session_state:
+                st.session_state[key] = []
 
-    # Gabungkan semua filter
-    df_filtered = df[mask_tahapan & mask_pelaksana & mask_waktu]
-    
-    # Sembunyikan kolom 'Tanggal_Sistem' dan 'Pelaksana_Sistem' dari tabel akhir
-    df_tampil = df_filtered.drop(columns=['Tanggal_Sistem', 'Pelaksana_Sistem'], errors='ignore')
+        cur_tahapan = st.session_state['sel_tahapan']
+        cur_pelaksana = st.session_state['sel_pelaksana']
+        cur_sasaran = st.session_state['sel_sasaran']
+        cur_bentuk = st.session_state['sel_bentuk']
+        cur_lhp = st.session_state['sel_lhp']
+
+        # --- Fungsi Pembuat Syarat Filter (Mask) ---
+        def make_mask(col, values):
+            if not values or col not in df.columns:
+                return pd.Series(True, index=df.index)
+            return df[col].isin(values)
+
+        mask_tahapan = make_mask('Tahapan yang diawasi', cur_tahapan)
+        mask_pelaksana = make_mask('Pelaksana_Sistem', cur_pelaksana)
+        mask_sasaran = make_mask('Sasaran', cur_sasaran)
+        mask_bentuk = make_mask('Bentuk', cur_bentuk)
+        mask_lhp = make_mask('Nomor LHP', cur_lhp)
+
+        # --- Fungsi Pembuat Daftar Opsi Dinamis ---
+        def get_options(mask, col, current_selections):
+            if col not in df.columns:
+                return []
+            valid_df = df[mask]
+            opts = set([str(x).strip() for x in valid_df[col].dropna() if str(x).strip() not in ['', '-']])
+            for sel in current_selections:
+                if str(sel).strip() != '':
+                    opts.add(str(sel).strip())
+            return sorted(list(opts))
+
+        # --- RENDER WIDGET MULTISELECT ---
+        tahapan_opts = get_options(mask_waktu & mask_ts & mask_pelaksana & mask_sasaran & mask_bentuk & mask_lhp, 'Tahapan yang diawasi', cur_tahapan)
+        st.multiselect("Tahapan Pengawasan", tahapan_opts, key='sel_tahapan', placeholder="Semua Tahapan...")
+
+        pelaksana_opts = get_options(mask_waktu & mask_ts & mask_tahapan & mask_sasaran & mask_bentuk & mask_lhp, 'Pelaksana_Sistem', cur_pelaksana)
+        st.multiselect("Pelaksana Tugas Utama", pelaksana_opts, key='sel_pelaksana', placeholder="Semua Pelaksana...")
+
+        sasaran_opts = get_options(mask_waktu & mask_ts & mask_tahapan & mask_pelaksana & mask_bentuk & mask_lhp, 'Sasaran', cur_sasaran)
+        st.multiselect("Sasaran Pengawasan", sasaran_opts, key='sel_sasaran', placeholder="Semua Sasaran...")
+
+        bentuk_opts = get_options(mask_waktu & mask_ts & mask_tahapan & mask_pelaksana & mask_sasaran & mask_lhp, 'Bentuk', cur_bentuk)
+        st.multiselect("Bentuk Pengawasan", bentuk_opts, key='sel_bentuk', placeholder="Semua Bentuk...")
+        
+        lhp_opts = get_options(mask_waktu & mask_ts & mask_tahapan & mask_pelaksana & mask_sasaran & mask_bentuk, 'Nomor LHP', cur_lhp)
+        st.multiselect("Nomor LHP", lhp_opts, key='sel_lhp', placeholder="Semua Nomor LHP...")
+
+        # --- GABUNGKAN SEMUA FILTER UNTUK DATAFRAME FINAL ---
+        df_filtered = df[mask_waktu & mask_ts & mask_tahapan & mask_pelaksana & mask_sasaran & mask_bentuk & mask_lhp]
+
+
+    # --- PEMBERSIHAN DATA UNTUK DITAMPILKAN ---
+    df_tampil = df_filtered.drop(columns=['Tanggal_Sistem', 'Pelaksana_Sistem', 'TS_Tanggal_Sistem'], errors='ignore')
 
     # --- METRIK INDIKATOR UTAMA ---
     st.markdown("<br>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
     m1.metric("📂 Total Laporan Terinput", f"{len(df_filtered)} Laporan")
-    # Menghitung pelaksana berdasarkan nama utama (sebelum koma)
     m2.metric("👥 Pelaksana Tugas Aktif", f"{df_filtered['Pelaksana_Sistem'].nunique()} Orang")
     m3.metric("📊 Tahapan Diawasi", f"{df_filtered['Tahapan yang diawasi'].nunique()} Kategori")
     st.markdown("<br>", unsafe_allow_html=True)
@@ -230,10 +353,10 @@ if check_password():
     # TAB 1: GRAFIK VISUAL
     with tab1:
         st.markdown("#### Ringkasan Grafik Pengawasan")
-        c1, c2 = st.columns(2)
         
+        c1, c2 = st.columns(2)
         with c1:
-            if not df_filtered.empty:
+            if not df_filtered.empty and 'Tahapan yang diawasi' in df_filtered.columns:
                 tahapan_count = df_filtered['Tahapan yang diawasi'].value_counts().reset_index()
                 tahapan_count.columns = ['Tahapan', 'Jumlah']
                 fig1 = px.bar(tahapan_count, x='Jumlah', y='Tahapan', orientation='h', 
@@ -243,26 +366,62 @@ if check_password():
                 fig1.update_layout(showlegend=False, margin=dict(l=0, r=0, t=40, b=0))
                 st.plotly_chart(fig1, use_container_width=True)
             else:
-                st.info("Tidak ada data laporan yang sesuai dengan filter.")
+                st.info("Tidak ada data laporan yang sesuai.")
 
         with c2:
-            if not df_filtered.empty:
-                # Membangun Pie Chart berdasarkan nama pertama saja
+            if not df_filtered.empty and 'Pelaksana_Sistem' in df_filtered.columns:
                 pelaksana_count = df_filtered['Pelaksana_Sistem'].value_counts().reset_index()
                 pelaksana_count.columns = ['Nama Pelaksana Utama', 'Jumlah']
                 fig2 = px.pie(pelaksana_count, names='Nama Pelaksana Utama', values='Jumlah', hole=0.4,
-                              title="Kontribusi Pelaksana Tugas (Nama Utama)",
+                              title="Kontribusi Pelaksana Tugas",
                               template="plotly_white")
                 fig2.update_traces(textposition='inside', textinfo='percent+label')
                 fig2.update_layout(showlegend=False, margin=dict(l=0, r=0, t=40, b=0))
                 st.plotly_chart(fig2, use_container_width=True)
             else:
-                st.info("Tidak ada data pelaksana yang sesuai dengan filter.")
+                st.info("Tidak ada data pelaksana yang sesuai.")
+                
+        st.markdown("<br>", unsafe_allow_html=True) 
+
+        c3, c4 = st.columns(2)
+        with c3:
+            if not df_filtered.empty and 'Sasaran' in df_filtered.columns:
+                df_sasaran_chart = df_filtered[df_filtered['Sasaran'].notna() & (df_filtered['Sasaran'].str.strip() != '') & (df_filtered['Sasaran'].str.strip() != '-')]
+                if not df_sasaran_chart.empty:
+                    sasaran_count = df_sasaran_chart['Sasaran'].value_counts().reset_index()
+                    sasaran_count.columns = ['Sasaran', 'Jumlah']
+                    fig3 = px.bar(sasaran_count, x='Jumlah', y='Sasaran', orientation='h', 
+                                  color='Sasaran', text='Jumlah', 
+                                  title="Distribusi Laporan per Sasaran",
+                                  template="plotly_white")
+                    fig3.update_layout(showlegend=False, margin=dict(l=0, r=0, t=40, b=0))
+                    st.plotly_chart(fig3, use_container_width=True)
+                else:
+                    st.info("Seluruh kolom Sasaran kosong pada data yang difilter.")
+            else:
+                st.info("Tidak ada data Sasaran yang sesuai.")
+
+        with c4:
+            if not df_filtered.empty and 'Bentuk' in df_filtered.columns:
+                df_bentuk_chart = df_filtered[df_filtered['Bentuk'].notna() & (df_filtered['Bentuk'].str.strip() != '') & (df_filtered['Bentuk'].str.strip() != '-')]
+                if not df_bentuk_chart.empty:
+                    bentuk_count = df_bentuk_chart['Bentuk'].value_counts().reset_index()
+                    bentuk_count.columns = ['Bentuk', 'Jumlah']
+                    fig4 = px.pie(bentuk_count, names='Bentuk', values='Jumlah', hole=0.4,
+                                  title="Proporsi Bentuk Pengawasan",
+                                  template="plotly_white")
+                    fig4.update_traces(textposition='inside', textinfo='percent+label')
+                    fig4.update_layout(showlegend=False, margin=dict(l=0, r=0, t=40, b=0))
+                    st.plotly_chart(fig4, use_container_width=True)
+                else:
+                    st.info("Seluruh kolom Bentuk kosong pada data yang difilter.")
+            else:
+                st.info("Tidak ada data Bentuk yang sesuai.")
 
     # TAB 2: TABEL DATA
     with tab2:
         st.markdown("#### Pangkalan Data Form A")
-        st.markdown("Data disinkronkan secara *real-time*. Kolom 'Nama Pelaksana Tugas' tetap menampilkan data utuh sesuai input.")
+        st.markdown("Data disinkronkan secara *real-time*. Kolom 'Nama Pelaksana Tugas' dan 'Timestamps' tetap menampilkan data utuh sesuai input.")
         st.dataframe(
             df_tampil, 
             use_container_width=True, 
