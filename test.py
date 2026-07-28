@@ -136,11 +136,10 @@ if check_password():
         df = pd.DataFrame(raw_data[1:], columns=raw_columns) 
         df = df.replace("", None)
         
-        # --- PERUBAHAN NAMA KOLOM SERENTAK (DISESUAIKAN PERMINTAAN TERBARU) ---
+        # --- PERUBAHAN NAMA KOLOM SERENTAK ---
         df = df.rename(columns={
             'Peserta': 'Tempat Kejadian Sengketa',
             'Tempat Sengketa': 'Peserta Pemilu',
-            # Variasi format penulisan lama agar tetap aman:
             'Tempat KejadianSengketa': 'Peserta Pemilu',
             'PesertaPemilu': 'Tempat Kejadian Sengketa',
             'Informasi Sengketa Pemilu': 'Peserta Pemilu'
@@ -353,10 +352,11 @@ if check_password():
     # --- TAB MENU NAVIGASI ---
     tab1, tab2 = st.tabs(["📈 Analisis Visual", "📑 Detail Tabel Data"])
 
-    # TAB 1: GRAFIK VISUAL
+    # TAB 1: GRAFIK VISUAL (6 GRAFIK: 3 BARIS)
     with tab1:
         st.markdown("#### Ringkasan Grafik Pengawasan")
         
+        # --- BARIS 1 GRAFIK (TAHAPAN & PELAKSANA) ---
         c1, c2 = st.columns(2)
         with c1:
             if not df_filtered.empty and 'Tahapan yang diawasi' in df_filtered.columns:
@@ -375,59 +375,4 @@ if check_password():
             if not df_filtered.empty and 'Pelaksana_Sistem' in df_filtered.columns:
                 pelaksana_count = df_filtered['Pelaksana_Sistem'].value_counts().reset_index()
                 pelaksana_count.columns = ['Nama Pelaksana Utama', 'Jumlah']
-                fig2 = px.pie(pelaksana_count, names='Nama Pelaksana Utama', values='Jumlah', hole=0.4,
-                              title="Kontribusi Pelaksana Tugas",
-                              template="plotly_white")
-                fig2.update_traces(textposition='inside', textinfo='percent+label')
-                fig2.update_layout(showlegend=False, margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig2, use_container_width=True)
-            else:
-                st.info("Tidak ada data pelaksana yang sesuai.")
-                
-        st.markdown("<br>", unsafe_allow_html=True) 
-
-        c3, c4 = st.columns(2)
-        with c3:
-            if not df_filtered.empty and 'Sasaran' in df_filtered.columns:
-                df_sasaran_chart = df_filtered[df_filtered['Sasaran'].notna() & (df_filtered['Sasaran'].str.strip() != '') & (df_filtered['Sasaran'].str.strip() != '-')]
-                if not df_sasaran_chart.empty:
-                    sasaran_count = df_sasaran_chart['Sasaran'].value_counts().reset_index()
-                    sasaran_count.columns = ['Sasaran', 'Jumlah']
-                    fig3 = px.bar(sasaran_count, x='Jumlah', y='Sasaran', orientation='h', 
-                                  color='Sasaran', text='Jumlah', 
-                                  title="Distribusi Laporan per Sasaran",
-                                  template="plotly_white")
-                    fig3.update_layout(showlegend=False, margin=dict(l=0, r=0, t=40, b=0))
-                    st.plotly_chart(fig3, use_container_width=True)
-                else:
-                    st.info("Seluruh kolom Sasaran kosong pada data yang difilter.")
-            else:
-                st.info("Tidak ada data Sasaran yang sesuai.")
-
-        with c4:
-            if not df_filtered.empty and 'Bentuk' in df_filtered.columns:
-                df_bentuk_chart = df_filtered[df_filtered['Bentuk'].notna() & (df_filtered['Bentuk'].str.strip() != '') & (df_filtered['Bentuk'].str.strip() != '-')]
-                if not df_bentuk_chart.empty:
-                    bentuk_count = df_bentuk_chart['Bentuk'].value_counts().reset_index()
-                    bentuk_count.columns = ['Bentuk', 'Jumlah']
-                    fig4 = px.pie(bentuk_count, names='Bentuk', values='Jumlah', hole=0.4,
-                                  title="Proporsi Bentuk Pengawasan",
-                                  template="plotly_white")
-                    fig4.update_traces(textposition='inside', textinfo='percent+label')
-                    fig4.update_layout(showlegend=False, margin=dict(l=0, r=0, t=40, b=0))
-                    st.plotly_chart(fig4, use_container_width=True)
-                else:
-                    st.info("Seluruh kolom Bentuk kosong pada data yang difilter.")
-            else:
-                st.info("Tidak ada data Bentuk yang sesuai.")
-
-    # TAB 2: TABEL DATA
-    with tab2:
-        st.markdown("#### Pangkalan Data Form A")
-        st.markdown("Data disinkronkan secara *real-time*. Kolom 'Nama Pelaksana Tugas' dan 'Timestamps' tetap menampilkan data utuh sesuai input.")
-        st.dataframe(
-            df_tampil, 
-            use_container_width=True, 
-            height=500,
-            hide_index=True 
-        )
+                fig
