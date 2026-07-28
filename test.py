@@ -136,11 +136,11 @@ if check_password():
         df = pd.DataFrame(raw_data[1:], columns=raw_columns) 
         df = df.replace("", None)
         
-        # --- PERUBAHAN NAMA KOLOM SERENTAK (DISESUAIKAN) ---
+        # --- PERUBAHAN NAMA KOLOM SERENTAK (DISESUAIKAN PERMINTAAN BARU) ---
         df = df.rename(columns={
-            'Tempat Kejadian Sengketa': 'Peserta Pemilu',
-            'Informasi Sengketa Pemilu': 'Peserta Pemilu',
-            'Peserta Pemilu': 'Tempat Kejadian Sengketa'
+            'Tempat Kejadian Sengketa': 'PesertaPemilu',
+            'Informasi Sengketa Pemilu': 'PesertaPemilu',
+            'Peserta Pemilu': 'Tempat KejadianSengketa'
         })
         
         # Terapkan pembersih kolom SEKALI LAGI untuk mencegah nama kembar
