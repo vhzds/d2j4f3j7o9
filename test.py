@@ -117,15 +117,33 @@ if check_password():
         
         raw_data = sheet.get_all_values()
         
-        # Membaca data sekaligus membersihkan spasi tersembunyi pada nama judul kolom
-        df = pd.DataFrame(raw_data[1:], columns=[str(col).strip() for col in raw_data[0]]) 
+        # --- FUNGSI ANTI-KEMBAR (DEDUPLIKASI NAMA KOLOM) ---
+        def anti_kembar(kolom_list):
+            clean = []
+            seen = {}
+            for k in kolom_list:
+                k_str = str(k).strip()
+                if k_str in seen:
+                    seen[k_str] += 1
+                    clean.append(f"{k_str} ({seen[k_str]})")
+                else:
+                    seen[k_str] = 1
+                    clean.append(k_str)
+            return clean
+
+        # Terapkan pembersih kolom saat pertama kali membaca data
+        raw_columns = anti_kembar(raw_data[0])
+        df = pd.DataFrame(raw_data[1:], columns=raw_columns) 
         df = df.replace("", None)
         
-        # --- PERUBAHAN NAMA KOLOM SERENTAK (TANPA BENTROK) ---
+        # --- PERUBAHAN NAMA KOLOM SERENTAK ---
         df = df.rename(columns={
             'Informasi Sengketa Pemilu': 'Peserta Pemilu',
             'Peserta Pemilu': 'Tempat Kejadian Sengketa'
         })
+        
+        # Terapkan pembersih kolom SEKALI LAGI untuk mencegah nama kembar akibat perubahan nama di atas
+        df.columns = anti_kembar(df.columns)
         
         # 1. Ekstraksi Tanggal dari 'Waktu dan Tempat'
         def ekstrak_tanggal_indo(teks):
