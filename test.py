@@ -158,14 +158,16 @@ if check_password():
         st.error(f"Gagal mengambil data. Detail: {e}")
         st.stop()
 
+    # Mendeteksi nama kolom timestamp secara otomatis ('Timestamp' vs 'Timestamps')
+    col_ts = 'Timestamps' if 'Timestamps' in df.columns else ('Timestamp' if 'Timestamp' in df.columns else 'Timestamps')
 
-    # --- SIDEBAR: CROSS-FILTERING MULTI-ARAH (DITAMBAH LHP) ---
+    # --- SIDEBAR: CROSS-FILTERING MULTI-ARAH (7 TINGKAT SILANG) ---
     with st.sidebar:
         st.markdown("### 🎛️ Panel Filter")
         
         # --- TOMBOL RESET FILTER ---
         if st.button("🔄 Reset Semua Filter"):
-            for key in ['sel_tahapan', 'sel_pelaksana', 'sel_sasaran', 'sel_bentuk', 'sel_lhp', 'sel_waktu']:
+            for key in ['sel_tahapan', 'sel_pelaksana', 'sel_sasaran', 'sel_bentuk', 'sel_lhp', 'sel_ts', 'sel_waktu']:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun() 
@@ -173,7 +175,7 @@ if check_password():
         st.info("Pilihan akan otomatis menyusut mengikuti opsi yang Anda klik.")
         st.markdown("---")
         
-        # 1. FILTER RENTANG WAKTU
+        # 1. FILTER RENTANG WAKTU KEJADIAN
         st.markdown("#### 📅 Waktu Kejadian")
         tanggal_valid = df['Tanggal_Sistem'].dropna()
         if not tanggal_valid.empty:
@@ -205,7 +207,7 @@ if check_password():
         st.markdown("---")
 
         # --- Inisialisasi Memori Filter ---
-        for key in ['sel_tahapan', 'sel_pelaksana', 'sel_sasaran', 'sel_bentuk', 'sel_lhp']:
+        for key in ['sel_tahapan', 'sel_pelaksana', 'sel_sasaran', 'sel_bentuk', 'sel_lhp', 'sel_ts']:
             if key not in st.session_state:
                 st.session_state[key] = []
 
@@ -214,6 +216,7 @@ if check_password():
         cur_sasaran = st.session_state['sel_sasaran']
         cur_bentuk = st.session_state['sel_bentuk']
         cur_lhp = st.session_state['sel_lhp']
+        cur_ts = st.session_state['sel_ts']
 
         # --- Fungsi Pembuat Syarat Filter (Mask) ---
         def make_mask(col, values):
@@ -226,6 +229,7 @@ if check_password():
         mask_sasaran = make_mask('Sasaran', cur_sasaran)
         mask_bentuk = make_mask('Bentuk', cur_bentuk)
         mask_lhp = make_mask('Nomor LHP', cur_lhp)
+        mask_ts = make_mask(col_ts, cur_ts)
 
         # --- Fungsi Pembuat Daftar Opsi Dinamis ---
         def get_options(mask, col, current_selections):
@@ -238,24 +242,27 @@ if check_password():
                     opts.add(str(sel).strip())
             return sorted(list(opts))
 
-        # --- RENDER WIDGET MULTISELECT (6 TINGKAT SILANG) ---
-        tahapan_opts = get_options(mask_waktu & mask_pelaksana & mask_sasaran & mask_bentuk & mask_lhp, 'Tahapan yang diawasi', cur_tahapan)
+        # --- RENDER WIDGET MULTISELECT (7 TINGKAT SILANG) ---
+        tahapan_opts = get_options(mask_waktu & mask_pelaksana & mask_sasaran & mask_bentuk & mask_lhp & mask_ts, 'Tahapan yang diawasi', cur_tahapan)
         st.multiselect("Tahapan Pengawasan", tahapan_opts, key='sel_tahapan', placeholder="Semua Tahapan...")
 
-        pelaksana_opts = get_options(mask_waktu & mask_tahapan & mask_sasaran & mask_bentuk & mask_lhp, 'Pelaksana_Sistem', cur_pelaksana)
+        pelaksana_opts = get_options(mask_waktu & mask_tahapan & mask_sasaran & mask_bentuk & mask_lhp & mask_ts, 'Pelaksana_Sistem', cur_pelaksana)
         st.multiselect("Pelaksana Tugas Utama", pelaksana_opts, key='sel_pelaksana', placeholder="Semua Pelaksana...")
 
-        sasaran_opts = get_options(mask_waktu & mask_tahapan & mask_pelaksana & mask_bentuk & mask_lhp, 'Sasaran', cur_sasaran)
+        sasaran_opts = get_options(mask_waktu & mask_tahapan & mask_pelaksana & mask_bentuk & mask_lhp & mask_ts, 'Sasaran', cur_sasaran)
         st.multiselect("Sasaran Pengawasan", sasaran_opts, key='sel_sasaran', placeholder="Semua Sasaran...")
 
-        bentuk_opts = get_options(mask_waktu & mask_tahapan & mask_pelaksana & mask_sasaran & mask_lhp, 'Bentuk', cur_bentuk)
+        bentuk_opts = get_options(mask_waktu & mask_tahapan & mask_pelaksana & mask_sasaran & mask_lhp & mask_ts, 'Bentuk', cur_bentuk)
         st.multiselect("Bentuk Pengawasan", bentuk_opts, key='sel_bentuk', placeholder="Semua Bentuk...")
         
-        lhp_opts = get_options(mask_waktu & mask_tahapan & mask_pelaksana & mask_sasaran & mask_bentuk, 'Nomor LHP', cur_lhp)
+        lhp_opts = get_options(mask_waktu & mask_tahapan & mask_pelaksana & mask_sasaran & mask_bentuk & mask_ts, 'Nomor LHP', cur_lhp)
         st.multiselect("Nomor LHP", lhp_opts, key='sel_lhp', placeholder="Semua Nomor LHP...")
 
+        ts_opts = get_options(mask_waktu & mask_tahapan & mask_pelaksana & mask_sasaran & mask_bentuk & mask_lhp, col_ts, cur_ts)
+        st.multiselect("Waktu Input (Timestamps)", ts_opts, key='sel_ts', placeholder="Semua Timestamps...")
+
         # --- GABUNGKAN SEMUA FILTER UNTUK DATAFRAME FINAL ---
-        df_filtered = df[mask_waktu & mask_tahapan & mask_pelaksana & mask_sasaran & mask_bentuk & mask_lhp]
+        df_filtered = df[mask_waktu & mask_tahapan & mask_pelaksana & mask_sasaran & mask_bentuk & mask_lhp & mask_ts]
 
 
     # --- PEMBERSIHAN DATA UNTUK DITAMPILKAN ---
