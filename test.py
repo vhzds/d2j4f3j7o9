@@ -138,11 +138,9 @@ if check_password():
         
         # --- PERUBAHAN NAMA KOLOM SERENTAK (DISESUAIKAN KOREKSI TERBARU) ---
         df = df.rename(columns={
-            # Variasi kelompok 1 diubah menjadi 'Peserta'
             'Tempat Kejadian Sengketa': 'Peserta',
             'Tempat KejadianSengketa': 'Peserta',
             'Informasi Sengketa Pemilu': 'Peserta',
-            # Variasi kelompok 2 diubah menjadi 'Tempat Sengketa'
             'Peserta Pemilu': 'Tempat Sengketa',
             'PesertaPemilu': 'Tempat Sengketa'
         })
@@ -343,6 +341,13 @@ if check_password():
     # --- PEMBERSIHAN DATA UNTUK DITAMPILKAN ---
     df_tampil = df_filtered.drop(columns=['Tanggal_Sistem', 'Pelaksana_Sistem', 'TS_Tanggal_Sistem'], errors='ignore')
 
+    # --- MENJADIKAN KOLOM PERTAMA SPREADSHEET SEBAGAI INDEKS TABEL ---
+    kolom_pertama = df.columns[0]
+    if kolom_pertama in df_tampil.columns:
+        df_tampil = df_tampil.set_index(kolom_pertama)
+    elif df_tampil.index.name != kolom_pertama:
+        df_tampil.index.name = kolom_pertama
+
     # --- METRIK INDIKATOR UTAMA ---
     st.markdown("<br>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
@@ -429,6 +434,5 @@ if check_password():
         st.dataframe(
             df_tampil, 
             use_container_width=True, 
-            height=500,
-            hide_index=True 
+            height=500
         )
