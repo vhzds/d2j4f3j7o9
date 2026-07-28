@@ -136,15 +136,18 @@ if check_password():
         df = pd.DataFrame(raw_data[1:], columns=raw_columns) 
         df = df.replace("", None)
         
-        # --- PERUBAHAN NAMA BERDASARKAN POSISI KOLOM (KOLOM 26 & 27) ---
-        cols = list(df.columns)
-        if len(cols) >= 26:
-            cols[25] = 'Peserta Pemilu'           # Kolom ke-26 (indeks 25)
-        if len(cols) >= 27:
-            cols[26] = 'Tempat Kejadian Sengketa' # Kolom ke-27 (indeks 26)
+        # --- PERUBAHAN NAMA KOLOM SERENTAK (DISESUAIKAN PERMINTAAN TERBARU) ---
+        df = df.rename(columns={
+            'Tempat KejadianSengketa': 'Peserta Pemilu',
+            'PesertaPemilu': 'Tempat Kejadian Sengketa',
+            # Kemungkinan nama kolom variasi spasi / format lama spreadsheet:
+            'Tempat Kejadian Sengketa': 'Peserta Pemilu',
+            'Peserta Pemilu': 'Tempat Kejadian Sengketa',
+            'Informasi Sengketa Pemilu': 'Peserta Pemilu'
+        })
         
-        # Terapkan pembersih kolom SEKALI LAGI untuk mencegah bentrok/duplikasi nama
-        df.columns = anti_kembar(cols)
+        # Terapkan pembersih kolom SEKALI LAGI untuk mencegah nama kembar
+        df.columns = anti_kembar(df.columns)
         
         # 1. Ekstraksi Tanggal dari 'Waktu dan Tempat'
         def ekstrak_tanggal_indo(teks):
@@ -265,7 +268,7 @@ if check_password():
             "Pilih Rentang Tanggal Input:",
             value=(min_ts_date, max_ts_date),
             min_value=min_ts_date,
-            max_ts_date=max_ts_date,
+            max_value=max_ts_date,
             key="sel_ts"
         )
         
