@@ -116,8 +116,16 @@ if check_password():
         sheet = client.open_by_url(sheet_url).sheet1
         
         raw_data = sheet.get_all_values()
-        df = pd.DataFrame(raw_data[1:], columns=raw_data[0]) 
+        
+        # Membaca data sekaligus membersihkan spasi tersembunyi pada nama judul kolom
+        df = pd.DataFrame(raw_data[1:], columns=[str(col).strip() for col in raw_data[0]]) 
         df = df.replace("", None)
+        
+        # --- PERUBAHAN NAMA KOLOM SERENTAK (TANPA BENTROK) ---
+        df = df.rename(columns={
+            'Informasi Sengketa Pemilu': 'Peserta Pemilu',
+            'Peserta Pemilu': 'Tempat Kejadian Sengketa'
+        })
         
         # 1. Ekstraksi Tanggal dari 'Waktu dan Tempat'
         def ekstrak_tanggal_indo(teks):
@@ -157,7 +165,6 @@ if check_password():
             if not val or not str(val).strip():
                 return pd.NaT
             try:
-                # dayfirst=True untuk format tanggal standar Indonesia (DD/MM/YYYY)
                 return pd.to_datetime(str(val).strip(), dayfirst=True).date()
             except:
                 return pd.NaT
@@ -194,7 +201,7 @@ if check_password():
         st.info("Pilihan akan otomatis menyusut mengikuti opsi yang Anda klik.")
         st.markdown("---")
         
-        # 1. FILTER RENTANG WAKTU KEJADIAN (KALENDER 1)
+        # 1. FILTER RENTANG WAKTU KEJADIAN
         st.markdown("#### 📅 Waktu Kejadian")
         tanggal_valid = df['Tanggal_Sistem'].dropna()
         if not tanggal_valid.empty:
@@ -225,7 +232,7 @@ if check_password():
 
         st.markdown("---")
 
-        # 2. FILTER RENTANG WAKTU INPUT / TIMESTAMPS (KALENDER 2)
+        # 2. FILTER RENTANG WAKTU INPUT / TIMESTAMPS
         st.markdown("#### 🕒 Waktu Input (Timestamps)")
         ts_valid = df['TS_Tanggal_Sistem'].dropna()
         if not ts_valid.empty:
@@ -290,7 +297,7 @@ if check_password():
                     opts.add(str(sel).strip())
             return sorted(list(opts))
 
-        # --- RENDER WIDGET MULTISELECT (5 TINGKAT SILANG) ---
+        # --- RENDER WIDGET MULTISELECT ---
         tahapan_opts = get_options(mask_waktu & mask_ts & mask_pelaksana & mask_sasaran & mask_bentuk & mask_lhp, 'Tahapan yang diawasi', cur_tahapan)
         st.multiselect("Tahapan Pengawasan", tahapan_opts, key='sel_tahapan', placeholder="Semua Tahapan...")
 
